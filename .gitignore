@@ -1,0 +1,36 @@
+# Python / Django
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.log
+*.pot
+*.pyproj
+*.mypy_cache/
+*.pytest_cache/
+.coverage
+
+# Django & env
+.env
+.env.local
+.env.*.local
+api/.venv/
+
+# Node/Next.js
+node_modules/
+.next/
+dist/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml # チームの方針に合わせて
+
+# Docker
+pg_data/
+**/.DS_Store
+
+# VS Code
+.vscode/

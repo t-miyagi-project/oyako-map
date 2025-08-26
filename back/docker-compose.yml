@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app_pw
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"   # ホストから psql/GUI で繋ぎたい場合
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    # user: "${UID}:${GID}" 不要
+    build:
+      context: ./api
+      args:
+        USER_UID: ${UID}
+        USER_GID: ${GID}
+    working_dir: /app
+    environment:
+      # Django 側から DB 接続に使う値
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: app
+      DB_USER: app
+      DB_PASSWORD: app_pw
+
+      DJANGO_SECRET_KEY: "dev-secret-key-change-me"
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+    volumes:
+      - ./api:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pg_data:
