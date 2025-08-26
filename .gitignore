@@ -1,36 +1,57 @@
-# Python / Django
-__pycache__/
-*.py[cod]
-*.pyc
-*.pyo
-*.pyd
-*.sqlite3
-*.log
-*.pot
-*.pyproj
-*.mypy_cache/
-*.pytest_cache/
-.coverage
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.code-workspace
 
-# Django & env
+# --- Env files (root & app) ---
 .env
 .env.local
 .env.*.local
-api/.venv/
+api/.env
+api/.env.*
+front/.env.local
+front/.env.*.local
 
-# Node/Next.js
-node_modules/
-.next/
-dist/
-out/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-lock.yaml # チームの方針に合わせて
+# --- Python / Django (api) ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.log
+*.pot
+*.pyproj
+*.sqlite3
+*.db
+.eggs/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+.venv/
 
-# Docker
+# （注意）マイグレーションはコミット対象なので *migrations/*.py は除外しない
+# api/**/migrations/__pycache__/ は上の __pycache__ により無視されます
+
+# 収集物をリポ外に出していない場合のみ（運用に合わせて）
+# api/staticfiles/
+# api/media/
+
+# --- Node / Next.js (front) ---
+front/node_modules/
+front/.next/
+front/.turbo/
+front/.vercel/
+front/.cache/
+front/.eslintcache
+front/dist/
+front/out/
+
+# --- Docker / 生成物 ---
 pg_data/
-**/.DS_Store
-
-# VS Code
-.vscode/
+docker-data/
+*.pid
