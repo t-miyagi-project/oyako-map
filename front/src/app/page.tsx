@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchPlaces, type PlaceListItem } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
+import MapView from "@/components/MapView";
 
 // クイックフィルタ（UI表示用）
 const QUICK_FILTERS = [
@@ -213,17 +214,16 @@ export default function Page() {
 
       {/* メイン（地図 + 一覧） */}
       <section className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-4 px-4 py-4 md:grid-cols-12">
-        {/* 地図（プレースホルダ） */}
+        {/* 地図（Google Maps） */}
         <div className="md:col-span-7 lg:col-span-8">
-          <div className="relative h-[48vh] w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900">
-            {/* 地図は後続でGoogle Maps連携 */}
-            <div className="pointer-events-none absolute inset-0 select-none bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.06),transparent_60%)]" />
-            <div className="absolute left-3 top-3">
+          <div className="relative">
+            <div className="absolute left-3 top-3 z-10">
               <Badge variant="outline">地図</Badge>
             </div>
-            <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+            <MapView center={coords} places={items} />
+            <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between">
               <div className="text-xs text-neutral-500">
-                現在地中心・ピン表示（後続実装）
+                現在地中心
                 {geoPermission === "denied" && (
                   <span className="ml-2 text-red-500">位置情報がブロックされています</span>
                 )}
