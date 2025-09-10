@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchPlaces, type PlaceListItem } from "@/lib/api";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // クイックフィルタ（UI表示用）
 const QUICK_FILTERS = [
@@ -16,18 +17,24 @@ const QUICK_FILTERS = [
 ] as const;
 
 export default function Page() {
+  // ルーター/URLクエリ
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   // 検索語（q）
   const [query, setQuery] = useState("");
   // クイックフィルタのON/OFF状態
   const [filters, setFilters] = useState<Record<string, boolean>>({});
-  // 現在地（T-007で本実装予定。ここではデフォルト座標を設定）
-  const [coords, setCoords] = useState<{ lat: number; lng: number }>({ lat: 35.6812, lng: 139.7671 }); // 東京駅付近を既定
+  // 現在地（初期値は東京駅付近。URL/ローカル保存で上書き）
+  const [coords, setCoords] = useState<{ lat: number; lng: number }>({ lat: 35.6812, lng: 139.7671 });
   // 読み込み/エラー状態
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // APIからの一覧データ
   const [items, setItems] = useState<PlaceListItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // 位置情報の権限状態（granted/denied/prompt/unknown）
+  const [geoPermission, setGeoPermission] = useState<"granted" | "denied" | "prompt" | "unknown">("unknown");
 
   // 検索トリガ（ボタン押下でインクリメントし、useEffect依存に含める）
   const [searchVersion, setSearchVersion] = useState(0);
@@ -67,6 +74,77 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords.lat, coords.lng, searchVersion]);
 
+  // 初期化: URLクエリ/ローカル保存から座標と検索語を復元し、位置情報の権限状態を取得
+  useEffect(() => {
+    // URLクエリから lat/lng/q を復元
+    try {
+      const latQ = searchParams?.get("lat");
+      const lngQ = searchParams?.get("lng");
+      const qQ = searchParams?.get("q");
+      if (qQ) setQuery(qQ);
+      if (latQ && lngQ) {
+        const latNum = Number(latQ);
+        const lngNum = Number(lngQ);
+        if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
+          setCoords({ lat: latNum, lng: lngNum });
+        }
+      } else {
+        // URLに無い場合はローカル保存から復元
+        const saved = (typeof window !== "undefined") ? window.localStorage.getItem("oyako:lastCoords") : null;
+        if (saved) {
+          const obj = JSON.parse(saved) as { lat: number; lng: number };
+          if (typeof obj?.lat === "number" && typeof obj?.lng === "number") {
+            setCoords({ lat: obj.lat, lng: obj.lng });
+          }
+        }
+      }
+    } catch {
+      // パースエラー時は既定値のままにする
+    }
+
+    // 位置情報の権限状態を問い合わせ
+    if (typeof navigator !== "undefined" && (navigator as any).permissions?.query) {
+      (navigator as any).permissions
+        .query({ name: "geolocation" as PermissionName })
+        .then((res: any) => {
+          setGeoPermission(res.state || "unknown");
+          // 既に許可済みの場合は自動取得（ユーザー操作不要）
+          if (res.state === "granted") {
+            requestGeolocation();
+          }
+          // 変化監視（タブ内で許可切り替えされた場合に反映）
+          if (typeof res.onchange !== "undefined") {
+            res.onchange = () => setGeoPermission(res.state || "unknown");
+          }
+        })
+        .catch(() => setGeoPermission("unknown"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 座標や検索語が変わったらURLとローカル保存へ反映（共有・リロード対応）
+  useEffect(() => {
+    try {
+      // ローカル保存
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("oyako:lastCoords", JSON.stringify(coords));
+      }
+      // URLクエリを更新（現在のパスを維持して置換）
+      const u = new URL(window.location.href);
+      u.searchParams.set("lat", String(coords.lat));
+      u.searchParams.set("lng", String(coords.lng));
+      if (query.trim()) {
+        u.searchParams.set("q", query.trim());
+      } else {
+        u.searchParams.delete("q");
+      }
+      router.replace(u.pathname + "?" + u.searchParams.toString());
+    } catch {
+      // 失敗しても致命的ではないため握りつぶす
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords.lat, coords.lng, query]);
+
   // クイックフィルタはクライアント側で features_summary に基づいて絞り込み
   const filtered = useMemo(() => {
     const active = Object.entries(filters)
@@ -76,19 +154,30 @@ export default function Page() {
     return items.filter((it) => active.every((code) => it.features_summary?.includes(code)))
   }, [items, filters])
 
-  // 現在地を取得して coords を更新（T-007で強化予定）
+  // 現在地を取得して coords を更新
   const requestGeolocation = () => {
-    if (!("geolocation" in navigator)) return
+    if (!("geolocation" in navigator)) {
+      setError("このブラウザは位置情報に対応していません");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        // 取得成功時：座標を更新し、自動で再検索が走る
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        // 取得成功：座標を更新（URL/ローカル保存/再検索は副作用で自動実行）
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGeoPermission("granted");
       },
-      () => {
-        // エラー時：何もしない（簡易運用）。UI上の現在地は既定値のまま
+      (err) => {
+        // 失敗：権限やタイムアウトなどのエラーを表示
+        if (err.code === err.PERMISSION_DENIED) setGeoPermission("denied");
+        setError("現在地の取得に失敗しました（権限や通信状況をご確認ください）");
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 30000,
       }
-    )
-  }
+    );
+  };
 
   return (
     <main className="min-h-[100dvh]">
@@ -133,7 +222,12 @@ export default function Page() {
               <Badge variant="outline">地図</Badge>
             </div>
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-              <div className="text-xs text-neutral-500">現在地中心・ピン表示（後続実装）</div>
+              <div className="text-xs text-neutral-500">
+                現在地中心・ピン表示（後続実装）
+                {geoPermission === "denied" && (
+                  <span className="ml-2 text-red-500">位置情報がブロックされています</span>
+                )}
+              </div>
               <Button size="sm" variant="secondary" onClick={requestGeolocation}>
                 現在地取得
               </Button>
