@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.4  # PostGIS有効イメージ（PostgreSQL 16 + PostGIS 3.4）
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: app
