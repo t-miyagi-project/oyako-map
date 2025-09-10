@@ -92,10 +92,29 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', SECRET_KEY)
 DEBUG = os.environ.get('DJANGO_DEBUG', '0') == '1'
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost').split(',')
 
-# CORS (Next.js: http://localhost:3000)
+# CORS/CSRF 設定（Next.js: http://localhost:3000 など）
+from corsheaders.defaults import default_headers
+
+# 許可オリジン（カンマ区切り）。例: "http://localhost:3000,http://127.0.0.1:3000"
 CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if os.environ.get('CORS_ALLOWED_ORIGINS') else []
-# 必要なら全許可（開発のみ）
-# CORS_ALLOW_ALL_ORIGINS = True
+
+# Cookie/JWT（withCredentials）を許可する場合に有効化（将来の認証を見据えてON）
+CORS_ALLOW_CREDENTIALS = True
+
+# 事前公開が必要なヘッダ（Idempotency-Key 等）
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'idempotency-key',
+]
+
+# ブラウザへ公開したい応答ヘッダ（レート制限の可視化）
+CORS_EXPOSE_HEADERS = [
+    'RateLimit-Limit',
+    'RateLimit-Remaining',
+    'RateLimit-Reset',
+]
+
+# CSRF の信頼オリジン（カンマ区切り）
+CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if os.environ.get('CSRF_TRUSTED_ORIGINS') else []
 
 # REST framework（最低限）
 REST_FRAMEWORK = {
