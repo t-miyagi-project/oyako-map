@@ -9,6 +9,15 @@ import { fetchPlaces, type PlaceListItem } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapView from "@/components/MapView";
 
+// 並び替えキーの型とラベル
+type SortKey = "distance" | "overall" | "count" | "new";
+const SORT_LABEL: Record<SortKey, string> = {
+  distance: "近い順",
+  overall: "総合評価順",
+  count: "レビュー件数順",
+  new: "新着順",
+};
+
 // クイックフィルタ（UI表示用）
 const QUICK_FILTERS = [
   { key: "nursing_room", label: "授乳室" },
@@ -36,6 +45,9 @@ export default function Page() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   // 位置情報の権限状態（granted/denied/prompt/unknown）
   const [geoPermission, setGeoPermission] = useState<"granted" | "denied" | "prompt" | "unknown">("unknown");
+
+  // 並び替え（UI状態）。初期値は距離順（サーバーの既定ソートに合わせる）
+  const [sortKey, setSortKey] = useState<SortKey>("distance");
 
   // 検索トリガ（ボタン押下でインクリメントし、useEffect依存に含める）
   const [searchVersion, setSearchVersion] = useState(0);
@@ -75,14 +87,21 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords.lat, coords.lng, searchVersion]);
 
-  // 初期化: URLクエリ/ローカル保存から座標と検索語を復元し、位置情報の権限状態を取得
+  // 初期化: URLクエリ/ローカル保存から座標・検索語・並び替えを復元し、位置情報の権限状態を取得
   useEffect(() => {
     // URLクエリから lat/lng/q を復元
     try {
       const latQ = searchParams?.get("lat");
       const lngQ = searchParams?.get("lng");
       const qQ = searchParams?.get("q");
+      const sQ = (searchParams?.get("sort") || "distance") as SortKey;
       if (qQ) setQuery(qQ);
+      // 並び替えの復元（不正値は distance にフォールバック）
+      if (["distance", "overall", "count", "new"].includes(sQ)) {
+        setSortKey(sQ);
+      } else {
+        setSortKey("distance");
+      }
       if (latQ && lngQ) {
         const latNum = Number(latQ);
         const lngNum = Number(lngQ);
@@ -123,7 +142,7 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 座標や検索語が変わったらURLとローカル保存へ反映（共有・リロード対応）
+  // 座標・検索語・並び替えが変わったらURLとローカル保存へ反映（共有・リロード対応）
   useEffect(() => {
     try {
       // ローカル保存
@@ -139,12 +158,14 @@ export default function Page() {
       } else {
         u.searchParams.delete("q");
       }
+      // 並び替え（distance/overall/count/new）をURLへ反映
+      u.searchParams.set("sort", sortKey);
       router.replace(u.pathname + "?" + u.searchParams.toString());
     } catch {
       // 失敗しても致命的ではないため握りつぶす
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, query]);
+  }, [coords.lat, coords.lng, query, sortKey]);
 
   // クイックフィルタはクライアント側で features_summary に基づいて絞り込み
   const filtered = useMemo(() => {
@@ -154,6 +175,29 @@ export default function Page() {
     if (active.length === 0) return items
     return items.filter((it) => active.every((code) => it.features_summary?.includes(code)))
   }, [items, filters])
+
+  // 並び替えは距離以外をフロント側で実施（サーバーは常に距離順で返す）
+  const sorted = useMemo(() => {
+    // 距離順はサーバーの返却順を尊重（ソートしない）
+    if (sortKey === "distance") return filtered;
+    // その他は項目に応じて降順（高評価/件数多い/新しい順）でソート
+    const arr = filtered.slice();
+    if (sortKey === "overall") {
+      // 総合評価（nullは0扱い）
+      arr.sort((a, b) => (b.rating.overall ?? 0) - (a.rating.overall ?? 0));
+    } else if (sortKey === "count") {
+      // レビュー件数
+      arr.sort((a, b) => (b.rating.count ?? 0) - (a.rating.count ?? 0));
+    } else if (sortKey === "new") {
+      // 新着（created_at が無い場合は元順序を優先しつつ0タイムスタンプ扱い）
+      const toTs = (v: string | null | undefined) => {
+        const t = v ? Date.parse(v) : NaN;
+        return Number.isNaN(t) ? 0 : t;
+      };
+      arr.sort((a, b) => toTs(b.created_at) - toTs(a.created_at));
+    }
+    return arr;
+  }, [filtered, sortKey]);
 
   // 現在地を取得して coords を更新
   const requestGeolocation = () => {
@@ -238,8 +282,23 @@ export default function Page() {
         {/* 一覧 */}
         <div className="md:col-span-5 lg:col-span-4">
           <div className="mb-2 flex items-center justify-between">
-            <div className="text-sm text-neutral-500">近い順に{filtered.length}件表示</div>
-            <Button variant="outline" size="sm">並び替え: 距離</Button>
+            {/* 件数と現在の並び替えラベルを表示 */}
+            <div className="text-sm text-neutral-500">{SORT_LABEL[sortKey]}で{filtered.length}件表示</div>
+            {/* 並び替えセレクタ（ネイティブselectでシンプルに実装） */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-neutral-500">並び替え:</span>
+              <select
+                className="h-8 rounded-md border border-neutral-200 bg-transparent px-2 text-sm dark:border-neutral-800"
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                aria-label="並び替え"
+              >
+                <option value="distance">距離</option>
+                <option value="overall">総合</option>
+                <option value="count">件数</option>
+                <option value="new">新着</option>
+              </select>
+            </div>
           </div>
 
           {/* ローディング/エラー表示 */}
@@ -248,8 +307,9 @@ export default function Page() {
             <div className="p-4 text-sm text-red-600">読み込みに失敗しました: {error}</div>
           )}
 
+          {/* 並び替え済み配列で描画（距離以外はローカルソート） */}
           <div className="flex flex-col gap-3">
-            {filtered.map((f) => (
+            {sorted.map((f) => (
               <Card key={f.id}>
                 <CardHeader className="pb-2">
                   <div className="flex items-baseline justify-between gap-2">

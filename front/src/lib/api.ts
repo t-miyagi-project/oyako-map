@@ -1,5 +1,6 @@
 // APIクライアント（ブラウザ側から呼び出す）
 // - GET /api/places を呼び出して距離順の施設一覧を取得する
+//   ※現時点のサーバーは sort=distance のみ対応のため、並び替え（総合/件数/新着）はフロント側でローカルソートする
 // - エラー時は例外を投げる（呼び出し元でトースト/メッセージを表示）
 
 export type PlaceListItem = {
@@ -10,6 +11,8 @@ export type PlaceListItem = {
   features_summary: string[]
   rating: { overall: number | null; count: number }
   thumbnail_url: string | null
+  // 将来の新着ソート用に created_at をオプションで保持（現状のAPIレスポンスには未含有）
+  created_at?: string | null
 }
 
 export type FetchPlacesParams = {
@@ -62,4 +65,3 @@ export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: P
   // 正常時のデータを返却
   return (await res.json()) as { items: PlaceListItem[]; next_cursor: string | null }
 }
-
