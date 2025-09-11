@@ -9,7 +9,7 @@ import { fetchPlaces, type PlaceListItem } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapView from "@/components/MapView";
 
-// 並び替えキーの型とラベル
+// 並び替えキーの型（UI内部）。APIは score/reviews を使用するためマッピングを行う。
 type SortKey = "distance" | "overall" | "count" | "new";
 const SORT_LABEL: Record<SortKey, string> = {
   distance: "近い順",
@@ -89,6 +89,13 @@ export default function Page() {
     return Object.entries(filters).filter(([, v]) => !!v).map(([k]) => k);
   }, [filters]);
 
+  // 並び替えキーをAPI仕様にマッピング
+  const sortKeyToApi = (k: SortKey): "distance" | "score" | "reviews" | "new" => {
+    if (k === "overall") return "score";
+    if (k === "count") return "reviews";
+    return k;
+  };
+
   // APIから一覧取得
   const load = useCallback(
     async (cursor: string | null = null) => {
@@ -96,8 +103,17 @@ export default function Page() {
       setError(null);
       try {
         // API呼び出し（距離順）
-        // features は API 設計に従い複数指定（サーバー未対応時はフロント側で絞り込み）
-        const res = await fetchPlaces({ lat: coords.lat, lng: coords.lng, radius_m: 3000, limit: 20, cursor, q: query, features: selectedFeatures });
+        // features は API 設計に従い複数指定
+        const res = await fetchPlaces({
+          lat: coords.lat,
+          lng: coords.lng,
+          radius_m: 3000,
+          limit: 20,
+          cursor,
+          q: query,
+          features: selectedFeatures,
+          sort: sortKeyToApi(sortKey),
+        });
         if (!cursor) {
           // 先頭ページ。既存を置き換える
           setItems(res.items);
@@ -112,14 +128,14 @@ export default function Page() {
         setLoading(false);
       }
     },
-    [coords.lat, coords.lng, query, selectedFeatures]
+    [coords.lat, coords.lng, query, selectedFeatures, sortKey]
   );
 
   // 初回と検索トリガ/座標変更時に読み込み
   useEffect(() => {
     void load(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, searchVersion]);
+  }, [coords.lat, coords.lng, searchVersion, sortKey]);
 
   // 無限スクロール：リスト内のsentinelが可視になったら次のカーソルで読み込み
   useEffect(() => {
@@ -166,14 +182,21 @@ export default function Page() {
     };
   }, []);
 
-  // 初期化: URLクエリ/ローカル保存から座標・検索語・並び替え・features を復元し、位置情報の権限状態を取得
+  // 初期化: URLクエリから座標・検索語・並び替え・features を復元し、位置情報の権限状態を取得
   useEffect(() => {
     // URLクエリから lat/lng/q を復元
     try {
       const latQ = searchParams?.get("lat");
       const lngQ = searchParams?.get("lng");
       const qQ = searchParams?.get("q");
-      const sQ = (searchParams?.get("sort") || "distance") as SortKey;
+      const sRaw = searchParams?.get("sort") || "distance";
+      // URLの sort は API仕様の可能性（score/reviews）と過去互換（overall/count）の両方を受け入れる
+      const sQ = ((v: string): SortKey => {
+        if (v === "score") return "overall";
+        if (v === "reviews") return "count";
+        if (v === "distance" || v === "overall" || v === "count" || v === "new") return v as SortKey;
+        return "distance";
+      })(sRaw);
       // features は複数指定（仕様: features=nursing_room&features=diaper_table）。features[] 形式にも両対応
       const fQ = [
         ...(searchParams?.getAll("features") ?? []),
@@ -198,16 +221,7 @@ export default function Page() {
         if (!Number.isNaN(latNum) && !Number.isNaN(lngNum)) {
           setCoords({ lat: latNum, lng: lngNum });
         }
-      } else {
-        // URLに無い場合はローカル保存から復元
-        const saved = (typeof window !== "undefined") ? window.localStorage.getItem("oyako:lastCoords") : null;
-        if (saved) {
-          const obj = JSON.parse(saved) as { lat: number; lng: number };
-          if (typeof obj?.lat === "number" && typeof obj?.lng === "number") {
-            setCoords({ lat: obj.lat, lng: obj.lng });
-          }
-        }
-      }
+      } // URLに無い場合は既定（東京駅）を維持する
     } catch {
       // パースエラー時は既定値のままにする
     }
@@ -248,8 +262,9 @@ export default function Page() {
       } else {
         u.searchParams.delete("q");
       }
-      // 並び替え（distance/overall/count/new）をURLへ反映
-      u.searchParams.set("sort", sortKey);
+      // 並び替えをURLへ反映（API仕様に合わせて score/reviews を使用）
+      const sortForUrl = sortKey === "overall" ? "score" : sortKey === "count" ? "reviews" : sortKey;
+      u.searchParams.set("sort", sortForUrl);
       // features（複数）をURLへ反映
       u.searchParams.delete("features");
       u.searchParams.delete("features[]");
@@ -272,28 +287,8 @@ export default function Page() {
     return items.filter((it) => active.every((code) => it.features_summary?.includes(code)))
   }, [items, filters])
 
-  // 並び替えは距離以外をフロント側で実施（サーバーは常に距離順で返す）
-  const sorted = useMemo(() => {
-    // 距離順はサーバーの返却順を尊重（ソートしない）
-    if (sortKey === "distance") return filtered;
-    // その他は項目に応じて降順（高評価/件数多い/新しい順）でソート
-    const arr = filtered.slice();
-    if (sortKey === "overall") {
-      // 総合評価（nullは0扱い）
-      arr.sort((a, b) => (b.rating.overall ?? 0) - (a.rating.overall ?? 0));
-    } else if (sortKey === "count") {
-      // レビュー件数
-      arr.sort((a, b) => (b.rating.count ?? 0) - (a.rating.count ?? 0));
-    } else if (sortKey === "new") {
-      // 新着（created_at が無い場合は元順序を優先しつつ0タイムスタンプ扱い）
-      const toTs = (v: string | null | undefined) => {
-        const t = v ? Date.parse(v) : NaN;
-        return Number.isNaN(t) ? 0 : t;
-      };
-      arr.sort((a, b) => toTs(b.created_at) - toTs(a.created_at));
-    }
-    return arr;
-  }, [filtered, sortKey]);
+  // 並び替えはサーバーで実施するため、クライアントでは並び替えを行わない（フィルタのみ）
+  const sorted = useMemo(() => filtered, [filtered]);
 
   // 並び替え/フィルタ変更で選択中が見えなくなった場合は選択を解除
   useEffect(() => {
@@ -404,7 +399,7 @@ export default function Page() {
             />
             <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between">
               <div className="text-xs text-neutral-500">
-                現在地中心
+                {selectedId ? "ピン選択中" : "現在地中心"}
                 {geoPermission === "denied" && (
                   <span className="ml-2 text-red-500">位置情報がブロックされています</span>
                 )}

@@ -25,6 +25,8 @@ export type FetchPlacesParams = {
   category?: string
   // 設備・サービスのコード配列（API設計: features[]=nursing_room&features=diaper_table ...）
   features?: string[]
+  // 並び替え（API仕様に準拠）: distance | score | reviews | new
+  sort?: "distance" | "score" | "reviews" | "new"
 }
 
 export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: PlaceListItem[]; next_cursor: string | null }> {
@@ -46,7 +48,8 @@ export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: P
       u.searchParams.append("features", code)
     }
   }
-  u.searchParams.set("sort", "distance")
+  // 並び替え（未指定時は distance）
+  u.searchParams.set("sort", params.sort ?? "distance")
 
   // API呼び出し
   const res = await fetch(u.toString(), {

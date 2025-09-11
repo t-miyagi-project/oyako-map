@@ -14,10 +14,11 @@ class PingView(APIView):
 
 
 class PlacesSearchView(APIView):
-    """施設検索（距離順）。
+    """施設検索。
     必須: lat, lng
-    任意: radius_m(既定3000, 最大30000), limit(既定20, 最大50), cursor(base64), q, category
-    仕様: PostGISのKNNで距離順に並べ、`{ items, next_cursor }` を返す。
+    任意: radius_m(既定3000, 最大30000), limit(既定20, 最大50), cursor(base64), q, category, sort
+    並び替え(sort): distance | score | reviews | new
+    仕様: 半径内で PostGIS KNN を使いつつ、指定の sort に応じて ORDER BY を切り替え、`{ items, next_cursor }` を返す。
     """
 
     def get(self, request):
@@ -94,11 +95,12 @@ class PlacesSearchView(APIView):
                 code="VALIDATION_ERROR", message="limit must be between 1 and 50", details={"field": "limit"}
             )
 
-        sort = qp.get("sort")
-        if sort and sort != "distance":
-            # 現時点では distance のみ対応
+        sort = qp.get("sort") or "distance"
+        if sort not in ("distance", "score", "reviews", "new"):
             return error_response(
-                code="VALIDATION_ERROR", message="sort supports only 'distance' currently", details={"field": "sort"}
+                code="VALIDATION_ERROR",
+                message="sort must be one of 'distance', 'score', 'reviews', 'new'",
+                details={"field": "sort"},
             )
 
         # カーソル（オフセットベースの簡易実装）
@@ -125,6 +127,15 @@ class PlacesSearchView(APIView):
 
         where_sql = " AND ".join(where)
 
+        # 並び順の構築
+        order_sql = "p.geog <-> up.g, p.id"
+        if sort == "score":
+            order_sql = "COALESCE(ps.avg_overall,0) DESC, p.geog <-> up.g, p.id"
+        elif sort == "reviews":
+            order_sql = "COALESCE(ps.review_count,0) DESC, p.geog <-> up.g, p.id"
+        elif sort == "new":
+            order_sql = "p.created_at DESC, p.geog <-> up.g, p.id"
+
         sql = f"""
         WITH up AS (
             SELECT ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography AS g
@@ -133,6 +144,8 @@ class PlacesSearchView(APIView):
                c.code AS category_code, c.label AS category_label,
                p.lat, p.lng,
                ST_Distance(p.geog, up.g) AS dist_m,
+               ps.avg_overall, ps.review_count,
+               p.created_at,
                COALESCE((
                  SELECT array_agg(f.code ORDER BY f.code)
                  FROM place_features pf
@@ -141,9 +154,10 @@ class PlacesSearchView(APIView):
                ), ARRAY[]::text[]) AS features_summary
         FROM places p
         JOIN categories c ON c.id = p.category_id
+        LEFT JOIN place_stats ps ON ps.place_id = p.id
         CROSS JOIN up
         WHERE {where_sql}
-        ORDER BY p.geog <-> up.g, p.id
+        ORDER BY {order_sql}
         LIMIT %s OFFSET %s
         """
 
@@ -164,6 +178,9 @@ class PlacesSearchView(APIView):
                 plat,
                 plng,
                 dist_m,
+                avg_overall,
+                review_count,
+                created_at,
                 features_summary,
             ) = row
             items.append(
@@ -173,9 +190,9 @@ class PlacesSearchView(APIView):
                     "category": {"code": category_code, "label": category_label},
                     "location": {"lat": float(plat) if plat is not None else None, "lng": float(plng) if plng is not None else None, "distance_m": float(dist_m)},
                     "features_summary": features_summary or [],
-                    # rating/thumbnail は将来拡張に備えてプレースホルダを用意（null/0）
-                    "rating": {"overall": None, "count": 0},
+                    "rating": {"overall": float(avg_overall) if avg_overall is not None else None, "count": int(review_count or 0)},
                     "thumbnail_url": None,
+                    "created_at": created_at,
                 }
             )
 
