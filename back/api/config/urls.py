@@ -8,6 +8,7 @@ from core.views import (
     FeaturesListView,
     AgeBandsListView,
 )
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -20,4 +21,10 @@ urlpatterns = [
     path('api/categories', CategoriesListView.as_view(), name='categories-list'),
     path('api/features', FeaturesListView.as_view(), name='features-list'),
     path('api/age-bands', AgeBandsListView.as_view(), name='age-bands-list'),
+    # OpenAPI スキーマ（JSON）
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    # Swagger UI（/api/schema/ を参照）
+    path('api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    # Redoc UI（/api/schema/ を参照）
+    path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]

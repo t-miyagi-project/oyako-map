@@ -31,6 +31,8 @@ INSTALLED_APPS = [
 INSTALLED_APPS += [
     'rest_framework',
     'corsheaders',
+    # OpenAPI自動生成（drf-spectacular）
+    'drf_spectacular',
     'core',
 ]
 
@@ -117,9 +119,24 @@ CORS_EXPOSE_HEADERS = [
 CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if os.environ.get('CSRF_TRUSTED_ORIGINS') else []
 
 # REST framework（最低限）
+# - スキーマ自動生成: drf-spectacular の AutoSchema を採用
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# OpenAPI スキーマのメタ設定（タイトル/説明/バージョンなど）
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Oyako Map API',
+    'DESCRIPTION': '子連れ向けスポット検索アプリのREST API（MVP版）。',
+    'VERSION': '0.2.0',
+    # /api/schema/ からの参照を許可
+    'SERVE_INCLUDE_SCHEMA': False,
+    # 可能ならサーバーホストの例を提示（ローカル開発用）
+    'SERVERS': [
+        {'url': 'http://localhost:8000', 'description': 'Local dev'},
     ],
 }
 
