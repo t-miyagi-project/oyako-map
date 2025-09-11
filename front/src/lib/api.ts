@@ -23,6 +23,8 @@ export type FetchPlacesParams = {
   cursor?: string | null
   q?: string
   category?: string
+  // 設備・サービスのコード配列（API設計: features[]=nursing_room&features=diaper_table ...）
+  features?: string[]
 }
 
 export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: PlaceListItem[]; next_cursor: string | null }> {
@@ -38,6 +40,12 @@ export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: P
   if (params.cursor) u.searchParams.set("cursor", params.cursor)
   if (params.q && params.q.trim()) u.searchParams.set("q", params.q.trim())
   if (params.category) u.searchParams.set("category", params.category)
+  if (params.features && params.features.length > 0) {
+    // features[] 形式で複数付与（例: features=nursing_room&features=diaper_table）
+    for (const code of params.features) {
+      u.searchParams.append("features", code)
+    }
+  }
   u.searchParams.set("sort", "distance")
 
   // API呼び出し

@@ -18,6 +18,17 @@ const SORT_LABEL: Record<SortKey, string> = {
   new: "新着順",
 };
 
+// フィルタ（features）候補一覧（APIのSeedと同等）
+const FEATURE_OPTIONS = [
+  { code: "nursing_room", label: "授乳室" },
+  { code: "diaper_table", label: "おむつ交換台" },
+  { code: "kids_toilet", label: "キッズトイレ" },
+  { code: "stroller_ok", label: "ベビーカーOK" },
+  { code: "elevator", label: "エレベーター" },
+  { code: "kids_menu", label: "キッズメニュー" },
+  { code: "allergy_label", label: "アレルギー表示" },
+];
+
 // クイックフィルタ（UI表示用）
 const QUICK_FILTERS = [
   { key: "nursing_room", label: "授乳室" },
@@ -49,12 +60,22 @@ export default function Page() {
   // 並び替え（UI状態）。初期値は距離順（サーバーの既定ソートに合わせる）
   const [sortKey, setSortKey] = useState<SortKey>("distance");
 
+  // フィルタドロワーの開閉状態
+  const [filterOpen, setFilterOpen] = useState(false);
+  // ドロワー内の一時選択（適用時に filters に反映する）
+  const [draftFilters, setDraftFilters] = useState<Record<string, boolean>>({});
+
   // 検索トリガ（ボタン押下でインクリメントし、useEffect依存に含める）
   const [searchVersion, setSearchVersion] = useState(0);
   const incrementSearch = () => setSearchVersion((v) => v + 1);
 
   // クイックフィルタのトグル
   const toggleFilter = (key: string) => setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // 選択中の features（filters の true キーを抽出）
+  const selectedFeatures = useMemo(() => {
+    return Object.entries(filters).filter(([, v]) => !!v).map(([k]) => k);
+  }, [filters]);
 
   // APIから一覧取得
   const load = useCallback(
@@ -63,7 +84,8 @@ export default function Page() {
       setError(null);
       try {
         // API呼び出し（距離順）
-        const res = await fetchPlaces({ lat: coords.lat, lng: coords.lng, radius_m: 3000, limit: 20, cursor, q: query });
+        // features は API 設計に従い複数指定（サーバー未対応時はフロント側で絞り込み）
+        const res = await fetchPlaces({ lat: coords.lat, lng: coords.lng, radius_m: 3000, limit: 20, cursor, q: query, features: selectedFeatures });
         if (!cursor) {
           // 先頭ページ。既存を置き換える
           setItems(res.items);
@@ -78,7 +100,7 @@ export default function Page() {
         setLoading(false);
       }
     },
-    [coords.lat, coords.lng, query]
+    [coords.lat, coords.lng, query, selectedFeatures]
   );
 
   // 初回と検索トリガ/座標変更時に読み込み
@@ -87,7 +109,7 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords.lat, coords.lng, searchVersion]);
 
-  // 初期化: URLクエリ/ローカル保存から座標・検索語・並び替えを復元し、位置情報の権限状態を取得
+  // 初期化: URLクエリ/ローカル保存から座標・検索語・並び替え・features を復元し、位置情報の権限状態を取得
   useEffect(() => {
     // URLクエリから lat/lng/q を復元
     try {
@@ -95,12 +117,23 @@ export default function Page() {
       const lngQ = searchParams?.get("lng");
       const qQ = searchParams?.get("q");
       const sQ = (searchParams?.get("sort") || "distance") as SortKey;
+      // features は複数指定（仕様: features=nursing_room&features=diaper_table）。features[] 形式にも両対応
+      const fQ = [
+        ...(searchParams?.getAll("features") ?? []),
+        ...(searchParams?.getAll("features[]") ?? []),
+      ];
       if (qQ) setQuery(qQ);
       // 並び替えの復元（不正値は distance にフォールバック）
       if (["distance", "overall", "count", "new"].includes(sQ)) {
         setSortKey(sQ);
       } else {
         setSortKey("distance");
+      }
+      // features の復元（Record<string, boolean> へ展開）
+      if (fQ.length > 0) {
+        const rec: Record<string, boolean> = {};
+        for (const code of fQ) rec[code] = true;
+        setFilters((prev) => ({ ...prev, ...rec }));
       }
       if (latQ && lngQ) {
         const latNum = Number(latQ);
@@ -142,7 +175,7 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 座標・検索語・並び替えが変わったらURLとローカル保存へ反映（共有・リロード対応）
+  // 座標・検索語・並び替え・features が変わったらURLとローカル保存へ反映（共有・リロード対応）
   useEffect(() => {
     try {
       // ローカル保存
@@ -160,14 +193,20 @@ export default function Page() {
       }
       // 並び替え（distance/overall/count/new）をURLへ反映
       u.searchParams.set("sort", sortKey);
+      // features（複数）をURLへ反映
+      u.searchParams.delete("features");
+      u.searchParams.delete("features[]");
+      for (const code of selectedFeatures) {
+        u.searchParams.append("features", code);
+      }
       router.replace(u.pathname + "?" + u.searchParams.toString());
     } catch {
       // 失敗しても致命的ではないため握りつぶす
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, query, sortKey]);
+  }, [coords.lat, coords.lng, query, sortKey, selectedFeatures]);
 
-  // クイックフィルタはクライアント側で features_summary に基づいて絞り込み
+  // クイックフィルタ/ドロワー問わず、選択された features でクライアント側でも絞り込み（AND条件）
   const filtered = useMemo(() => {
     const active = Object.entries(filters)
       .filter(([, v]) => v)
@@ -251,6 +290,18 @@ export default function Page() {
                 </Button>
               )
             })}
+            {/* ドロワーを開くボタン（選択数をバッジ表示） */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // 開く際に現在の filters をドラフトへコピー
+                setDraftFilters(filters);
+                setFilterOpen(true);
+              }}
+            >
+              フィルタ{selectedFeatures.length > 0 ? `(${selectedFeatures.length})` : ""}
+            </Button>
             <div className="ml-auto text-xs text-neutral-500">中心: {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}</div>
           </div>
         </div>
@@ -264,7 +315,8 @@ export default function Page() {
             <div className="absolute left-3 top-3 z-10">
               <Badge variant="outline">地図</Badge>
             </div>
-            <MapView center={coords} places={items} />
+            {/* 地図のピンもフィルタ後の結果に合わせる */}
+            <MapView center={coords} places={filtered} />
             <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between">
               <div className="text-xs text-neutral-500">
                 現在地中心
@@ -342,6 +394,70 @@ export default function Page() {
           )}
         </div>
       </section>
+      {/* フィルタドロワー（右スライド） */}
+      {filterOpen && (
+        <div className="fixed inset-0 z-20">
+          {/* オーバーレイ */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setFilterOpen(false)}
+            aria-hidden
+          />
+          {/* 本体 */}
+          <div className="absolute right-0 top-0 h-full w-80 max-w-[90vw] bg-[color:var(--background)] shadow-xl border-l border-neutral-200 dark:border-neutral-800 flex flex-col">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="font-medium">フィルタ</div>
+              <Button variant="outline" size="sm" onClick={() => setFilterOpen(false)}>閉じる</Button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <div className="mb-3 text-sm text-neutral-500">設備・サービス</div>
+              <div className="grid grid-cols-1 gap-2">
+                {FEATURE_OPTIONS.map((opt) => {
+                  const checked = !!draftFilters[opt.code];
+                  return (
+                    <label key={opt.code} className="flex items-center gap-2">
+                      {/* チェックボックス（選択で一時状態を更新） */}
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-current"
+                        checked={checked}
+                        onChange={(e) => setDraftFilters((prev) => ({ ...prev, [opt.code]: e.target.checked }))}
+                      />
+                      <span className="text-sm">{opt.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="border-t px-4 py-3 flex items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // すべてクリア（ドラフトを空に）
+                  setDraftFilters({});
+                }}
+              >
+                すべてクリア
+              </Button>
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setFilterOpen(false)}>キャンセル</Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // 適用：filters に反映し、検索を発火
+                    setFilters(draftFilters);
+                    setFilterOpen(false);
+                    incrementSearch();
+                  }}
+                >
+                  適用
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
