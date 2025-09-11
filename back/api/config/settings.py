@@ -125,6 +125,8 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # 例外時の応答フォーマットを統一
+    'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
 }
 
 # OpenAPI スキーマのメタ設定（タイトル/説明/バージョンなど）

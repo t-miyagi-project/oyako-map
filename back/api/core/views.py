@@ -5,27 +5,8 @@ from rest_framework import status
 import base64
 import json
 import uuid
+from core.exceptions import error_response  # 共通エラーフォーマッタ
 
-
-def _error_response(code: str, message: str, details: dict | None = None, status_code: int = 400):
-    """API設計に合わせたエラーレスポンスを生成する。
-    - code: エラー分類（例: VALIDATION_ERROR）
-    - message: 人が読める説明
-    - details: フィールド名などの詳細
-    - status_code: HTTPステータス
-    """
-    trace_id = f"req_{uuid.uuid4().hex[:12]}"
-    return Response(
-        {
-            "error": {
-                "code": code,
-                "message": message,
-                "details": details or {},
-                "trace_id": trace_id,
-            }
-        },
-        status=status_code,
-    )
 
 class PingView(APIView):
     def get(self, request):
@@ -71,7 +52,7 @@ class PlacesSearchView(APIView):
             lng = _get_float("lng", required=True)
         except ValueError as e:
             # 必須パラメータが欠落/不正
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR",
                 message=f"{str(e)} is required and must be a number",
                 details={"field": str(e)},
@@ -80,11 +61,11 @@ class PlacesSearchView(APIView):
 
         # 緯度経度の範囲チェック
         if not (-90.0 <= lat <= 90.0):
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR", message="lat out of range", details={"field": "lat"}
             )
         if not (-180.0 <= lng <= 180.0):
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR", message="lng out of range", details={"field": "lng"}
             )
 
@@ -93,11 +74,11 @@ class PlacesSearchView(APIView):
         try:
             radius_m = float(radius_m) if radius_m is not None else 3000.0
         except Exception:
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR", message="radius_m must be a number", details={"field": "radius_m"}
             )
         if radius_m <= 0 or radius_m > 30000:
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR", message="radius_m must be between 1 and 30000", details={"field": "radius_m"}
             )
 
@@ -105,18 +86,18 @@ class PlacesSearchView(APIView):
         try:
             limit = int(limit) if limit is not None else 20
         except Exception:
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR", message="limit must be an integer", details={"field": "limit"}
             )
         if limit <= 0 or limit > 50:
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR", message="limit must be between 1 and 50", details={"field": "limit"}
             )
 
         sort = qp.get("sort")
         if sort and sort != "distance":
             # 現時点では distance のみ対応
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR", message="sort supports only 'distance' currently", details={"field": "sort"}
             )
 
@@ -219,7 +200,7 @@ class PlaceDetailView(APIView):
         try:
             uuid.UUID(str(place_id))
         except Exception:
-            return _error_response(
+            return error_response(
                 code="VALIDATION_ERROR",
                 message="place_id must be a valid UUID",
                 details={"field": "place_id"},
@@ -243,7 +224,7 @@ class PlaceDetailView(APIView):
             row = cur.fetchone()
 
         if not row:
-            return _error_response(
+            return error_response(
                 code="NOT_FOUND", message="place not found", details={"place_id": str(place_id)}, status_code=404
             )
 
