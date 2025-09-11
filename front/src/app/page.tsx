@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +69,9 @@ export default function Page() {
   const [searchVersion, setSearchVersion] = useState(0);
   const incrementSearch = () => setSearchVersion((v) => v + 1);
 
+  // 無限スクロール用の監視対象（リスト最下部に配置）
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
   // クイックフィルタのトグル
   const toggleFilter = (key: string) => setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -108,6 +111,25 @@ export default function Page() {
     void load(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords.lat, coords.lng, searchVersion]);
+
+  // 無限スクロール：下部sentinelが可視になったら次のカーソルで読み込み
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    // rootMarginで早めに発火（手前200px）
+    const io = new IntersectionObserver(
+      (entries) => {
+        const e = entries[0];
+        // 次のページが存在し、読み込み中でなければ追加読み込み
+        if (e.isIntersecting && nextCursor && !loading) {
+          void load(nextCursor);
+        }
+      },
+      { root: null, rootMargin: "200px", threshold: 0 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [nextCursor, loading, load]);
 
   // 初期化: URLクエリ/ローカル保存から座標・検索語・並び替え・features を復元し、位置情報の権限状態を取得
   useEffect(() => {
@@ -386,7 +408,10 @@ export default function Page() {
             ))}
           </div>
 
-          {/* もっと見る（ページング） */}
+          {/* 無限スクロール監視用の要素（画面下部で交差したら次ページ取得） */}
+          <div ref={sentinelRef} className="h-8" />
+
+          {/* フォールバック: もっと見る（Observer非対応や発火失敗時） */}
           {nextCursor && !loading && (
             <div className="mt-3 flex justify-center">
               <Button variant="outline" onClick={() => void load(nextCursor)}>もっと見る</Button>

@@ -204,3 +204,155 @@ class PlacesSearchView(APIView):
             next_cursor = base64.urlsafe_b64encode(json.dumps(next_cursor_obj).encode("utf-8")).decode("utf-8")
 
         return Response({"items": items, "next_cursor": next_cursor})
+
+
+class PlaceDetailView(APIView):
+    """施設詳細を返す。
+    入力: path param {id}
+    返却: API設計に準拠した施設詳細（features/rating/photos/sourceメタを含む）。
+    - 現状のDBにはレビュー/写真集計が無いため、rating と photos はプレースホルダ（overall=null, count=0, photos=[]）
+    - 取得元メタは places.google_place_id / data_source を返す
+    """
+
+    def get(self, request, place_id: str):
+        # 1) UUIDのバリデーション
+        try:
+            uuid.UUID(str(place_id))
+        except Exception:
+            return _error_response(
+                code="VALIDATION_ERROR",
+                message="place_id must be a valid UUID",
+                details={"field": "place_id"},
+                status_code=400,
+            )
+
+        # 2) 施設本体の取得（カテゴリ含む）
+        sql_place = """
+            SELECT p.id, p.name, p.description, p.address, p.phone, p.website_url,
+                   p.opening_hours_json, p.lat, p.lng,
+                   c.code AS category_code, c.label AS category_label,
+                   p.google_place_id, p.data_source, p.created_at, p.updated_at
+            FROM places p
+            JOIN categories c ON c.id = p.category_id
+            WHERE p.id = %s
+            LIMIT 1
+        """
+
+        with connection.cursor() as cur:
+            cur.execute(sql_place, [str(place_id)])
+            row = cur.fetchone()
+
+        if not row:
+            return _error_response(
+                code="NOT_FOUND", message="place not found", details={"place_id": str(place_id)}, status_code=404
+            )
+
+        (
+            pid,
+            name,
+            description,
+            address,
+            phone,
+            website_url,
+            opening_hours_json,
+            lat,
+            lng,
+            category_code,
+            category_label,
+            google_place_id,
+            data_source,
+            created_at,
+            updated_at,
+        ) = row
+
+        # 3) features（place_features×features）を取得
+        sql_features = """
+            SELECT f.code, f.label, COALESCE(pf.value, 1) AS value, pf.detail
+            FROM place_features pf
+            JOIN features f ON f.id = pf.feature_id
+            WHERE pf.place_id = %s AND COALESCE(pf.value, 1) > 0
+            ORDER BY f.code
+        """
+        with connection.cursor() as cur:
+            cur.execute(sql_features, [str(place_id)])
+            feature_rows = cur.fetchall()
+
+        features = [
+            {"code": code, "label": label, "value": int(value) if value is not None else None, "detail": detail}
+            for (code, label, value, detail) in feature_rows
+        ]
+
+        # 4) rating/photos/sourceメタは現状プレースホルダ or placesカラムから構成
+        rating = {"overall": None, "count": 0, "axes": {}}
+        photos = []  # 将来: photos テーブルから取得
+        google_meta = None
+        if google_place_id:
+            # 取得元メタ（サマリ）。同期時刻等は将来 place_source_meta から拡張
+            google_meta = {"place_id": google_place_id, "source": "google", "synced_at": None}
+
+        # 5) 応答を整形して返却
+        return Response(
+            {
+                "id": str(pid),
+                "name": name,
+                "category": {"code": category_code, "label": category_label},
+                "description": description,
+                "address": address,
+                "phone": phone,
+                "website_url": website_url,
+                "opening_hours": opening_hours_json,
+                "location": {"lat": float(lat) if lat is not None else None, "lng": float(lng) if lng is not None else None},
+                "features": features,
+                "rating": rating,
+                "photos": photos,
+                "google": google_meta,
+                "data_source": data_source,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
+
+
+class CategoriesListView(APIView):
+    """カテゴリ一覧。
+    返却: { items: [{ code, label, sort }] }
+    """
+
+    def get(self, request):
+        sql = "SELECT code, label, sort FROM categories ORDER BY sort, code"
+        with connection.cursor() as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+        items = [{"code": code, "label": label, "sort": int(sort)} for (code, label, sort) in rows]
+        return Response({"items": items})
+
+
+class FeaturesListView(APIView):
+    """設備・サービス一覧。
+    返却: { items: [{ code, label, category, description }] }
+    """
+
+    def get(self, request):
+        sql = "SELECT code, label, category, description FROM features ORDER BY code"
+        with connection.cursor() as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+        items = [
+            {"code": code, "label": label, "category": category, "description": description}
+            for (code, label, category, description) in rows
+        ]
+        return Response({"items": items})
+
+
+class AgeBandsListView(APIView):
+    """年齢帯一覧。
+    返却: { items: [{ code, label, sort }] }
+    """
+
+    def get(self, request):
+        sql = "SELECT code, label, sort FROM age_bands ORDER BY sort, code"
+        with connection.cursor() as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+        items = [{"code": code, "label": label, "sort": int(sort)} for (code, label, sort) in rows]
+        return Response({"items": items})
