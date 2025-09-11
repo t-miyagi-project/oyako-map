@@ -15,6 +15,14 @@ export type PlaceListItem = {
   created_at?: string | null
 }
 
+// features マスタの型
+export type FeatureMasterItem = {
+  code: string
+  label: string
+  category?: string | null
+  description?: string | null
+}
+
 export type FetchPlacesParams = {
   lat: number
   lng: number
@@ -75,4 +83,20 @@ export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: P
 
   // 正常時のデータを返却
   return (await res.json()) as { items: PlaceListItem[]; next_cursor: string | null }
+}
+
+// features マスタを取得する（UIのフィルタドロワーで使用）
+export async function fetchFeaturesMaster(): Promise<{ items: FeatureMasterItem[] }> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const u = new URL("/api/features", base)
+  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const data = await res.json()
+      if (data?.error?.message) message = data.error.message
+    } catch {}
+    throw new Error(message)
+  }
+  return (await res.json()) as { items: FeatureMasterItem[] }
 }

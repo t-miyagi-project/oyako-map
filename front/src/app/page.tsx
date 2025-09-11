@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { fetchPlaces, type PlaceListItem } from "@/lib/api";
+import { fetchPlaces, fetchFeaturesMaster, type PlaceListItem, type FeatureMasterItem } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapView from "@/components/MapView";
 
@@ -18,16 +18,7 @@ const SORT_LABEL: Record<SortKey, string> = {
   new: "新着順",
 };
 
-// フィルタ（features）候補一覧（APIのSeedと同等）
-const FEATURE_OPTIONS = [
-  { code: "nursing_room", label: "授乳室" },
-  { code: "diaper_table", label: "おむつ交換台" },
-  { code: "kids_toilet", label: "キッズトイレ" },
-  { code: "stroller_ok", label: "ベビーカーOK" },
-  { code: "elevator", label: "エレベーター" },
-  { code: "kids_menu", label: "キッズメニュー" },
-  { code: "allergy_label", label: "アレルギー表示" },
-];
+// フィルタ（features）候補一覧は API から動的取得する
 
 // クイックフィルタ（UI表示用）
 const QUICK_FILTERS = [
@@ -73,6 +64,10 @@ export default function Page() {
   const [filterOpen, setFilterOpen] = useState(false);
   // ドロワー内の一時選択（適用時に filters に反映する）
   const [draftFilters, setDraftFilters] = useState<Record<string, boolean>>({});
+  // features マスタ（ドロワー表示用）
+  const [featureOptions, setFeatureOptions] = useState<FeatureMasterItem[] | null>(null);
+  const [featureLoading, setFeatureLoading] = useState(false);
+  const [featureError, setFeatureError] = useState<string | null>(null);
 
   // 検索トリガ（ボタン押下でインクリメントし、useEffect依存に含める）
   const [searchVersion, setSearchVersion] = useState(0);
@@ -131,11 +126,11 @@ export default function Page() {
     [coords.lat, coords.lng, query, selectedFeatures, sortKey]
   );
 
-  // 初回と検索トリガ/座標変更時に読み込み
+  // 初回と検索トリガ/座標変更/並び替え/feature変更時に読み込み（サーバー側でfeaturesを適用するため）
   useEffect(() => {
     void load(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, searchVersion, sortKey]);
+  }, [coords.lat, coords.lng, searchVersion, sortKey, selectedFeatures]);
 
   // 無限スクロール：リスト内のsentinelが可視になったら次のカーソルで読み込み
   useEffect(() => {
@@ -278,14 +273,8 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords.lat, coords.lng, query, sortKey, selectedFeatures]);
 
-  // クイックフィルタ/ドロワー問わず、選択された features でクライアント側でも絞り込み（AND条件）
-  const filtered = useMemo(() => {
-    const active = Object.entries(filters)
-      .filter(([, v]) => v)
-      .map(([k]) => k)
-    if (active.length === 0) return items
-    return items.filter((it) => active.every((code) => it.features_summary?.includes(code)))
-  }, [items, filters])
+  // サーバー側で features フィルタを適用するため、クライアント側では順序維持のため items をそのまま使う
+  const filtered = useMemo(() => items, [items])
 
   // 並び替えはサーバーで実施するため、クライアントでは並び替えを行わない（フィルタのみ）
   const sorted = useMemo(() => filtered, [filtered]);
@@ -372,6 +361,15 @@ export default function Page() {
                 // 開く際に現在の filters をドラフトへコピー
                 setDraftFilters(filters);
                 setFilterOpen(true);
+                // 初回のみ features マスタを取得
+                if (!featureOptions && !featureLoading) {
+                  setFeatureLoading(true);
+                  setFeatureError(null);
+                  fetchFeaturesMaster()
+                    .then((res) => setFeatureOptions(res.items))
+                    .catch((e: any) => setFeatureError(e?.message ?? "読み込みに失敗しました"))
+                    .finally(() => setFeatureLoading(false));
+                }
               }}
             >
               フィルタ{selectedFeatures.length > 0 ? `(${selectedFeatures.length})` : ""}
@@ -506,23 +504,29 @@ export default function Page() {
             </div>
             <div className="flex-1 overflow-auto p-4">
               <div className="mb-3 text-sm text-neutral-500">設備・サービス</div>
-              <div className="grid grid-cols-1 gap-2">
-                {FEATURE_OPTIONS.map((opt) => {
-                  const checked = !!draftFilters[opt.code];
-                  return (
-                    <label key={opt.code} className="flex items-center gap-2">
-                      {/* チェックボックス（選択で一時状態を更新） */}
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-current"
-                        checked={checked}
-                        onChange={(e) => setDraftFilters((prev) => ({ ...prev, [opt.code]: e.target.checked }))}
-                      />
-                      <span className="text-sm">{opt.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
+              {featureLoading && <div className="text-sm text-neutral-500">読み込み中...</div>}
+              {featureError && !featureLoading && (
+                <div className="text-sm text-red-600">ロードに失敗しました: {featureError}</div>
+              )}
+              {!featureLoading && !featureError && (
+                <div className="grid grid-cols-1 gap-2">
+                  {(featureOptions ?? []).map((opt) => {
+                    const checked = !!draftFilters[opt.code];
+                    return (
+                      <label key={opt.code} className="flex items-center gap-2">
+                        {/* チェックボックス（選択で一時状態を更新） */}
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-current"
+                          checked={checked}
+                          onChange={(e) => setDraftFilters((prev) => ({ ...prev, [opt.code]: e.target.checked }))}
+                        />
+                        <span className="text-sm">{opt.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="border-t px-4 py-3 flex items-center justify-between gap-2">
               <Button

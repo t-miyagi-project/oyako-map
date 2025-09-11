@@ -109,6 +109,13 @@ class PlacesSearchView(APIView):
         # 任意フィルタ
         q = qp.get("q")
         category = qp.get("category")
+        # features は複数指定に対応（features=... を複数回、features[] 形式にも両対応）。無効コードは無視する前提。
+        features_list: list[str] = []
+        try:
+            # DRFの QueryDict は getlist を提供
+            features_list = list(dict.fromkeys([*qp.getlist("features"), *qp.getlist("features[]")]))
+        except Exception:
+            features_list = []
 
         # 2) 検索SQLの構築（PostGIS KNN + 追加フィルタ）
         where = ["ST_DWithin(p.geog, up.g, %s)"]
@@ -124,6 +131,14 @@ class PlacesSearchView(APIView):
         if q:
             where.append("p.search_vector @@ plainto_tsquery('simple', %s)")
             params.append(q)
+
+        # features AND条件（指定された全コードを満たす施設に限定）
+        for code in features_list:
+            where.append(
+                "EXISTS (SELECT 1 FROM place_features pf JOIN features f2 ON f2.id = pf.feature_id "
+                "WHERE pf.place_id = p.id AND f2.code = %s AND COALESCE(pf.value,1) > 0)"
+            )
+            params.append(code)
 
         where_sql = " AND ".join(where)
 
