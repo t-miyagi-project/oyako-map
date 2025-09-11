@@ -160,5 +160,70 @@ JOIN features f ON f.code IN ('elevator','stroller_ok','kids_toilet')
 WHERE p.name = '東京国際フォーラム キッズスペース（サンプル）'
 ON CONFLICT (place_id, feature_id) DO NOTHING;
 
-COMMIT;
+-- 8) 丸の内北口広場（サンプル）: 公園（駅前広場想定）
+INSERT INTO places (id, name, category_id, description, address, geog, created_at, updated_at)
+SELECT uuid_generate_v4(), '丸の内北口広場（サンプル）', c.id,
+       '駅前の広場。ベビーカーでの移動に配慮。',
+       '東京都千代田区丸の内',
+       ST_SetSRID(ST_MakePoint(139.7669, 35.6825), 4326)::geography,
+       NOW(), NOW()
+FROM categories c
+WHERE c.code = 'park'
+  AND NOT EXISTS (SELECT 1 FROM places p WHERE p.name = '丸の内北口広場（サンプル）');
 
+INSERT INTO place_features (place_id, feature_id, value, detail)
+SELECT p.id, f.id, 1, 'フラットな舗装でベビーカー移動がしやすい'
+FROM places p
+JOIN features f ON f.code IN ('stroller_ok')
+WHERE p.name = '丸の内北口広場（サンプル）'
+ON CONFLICT (place_id, feature_id) DO NOTHING;
+
+-- 9) 駅前ファミリーモール（サンプル）: 屋内キッズ（商業施設内プレイエリア想定）
+INSERT INTO places (id, name, category_id, description, address, geog, created_at, updated_at)
+SELECT uuid_generate_v4(), '駅前ファミリーモール（サンプル）', c.id,
+       '商業施設内のファミリーモール。授乳室・交換台・エレベーター完備。',
+       '東京都千代田区丸の内',
+       ST_SetSRID(ST_MakePoint(139.7712, 35.6817), 4326)::geography,
+       NOW(), NOW()
+FROM categories c
+WHERE c.code = 'indoor_kids'
+  AND NOT EXISTS (SELECT 1 FROM places p WHERE p.name = '駅前ファミリーモール（サンプル）');
+
+INSERT INTO place_features (place_id, feature_id, value, detail)
+SELECT p.id, f.id, 1,
+       CASE f.code
+         WHEN 'nursing_room' THEN '個室2・給湯あり'
+         WHEN 'diaper_table' THEN '交換台3台'
+         WHEN 'elevator' THEN '各階にエレベーター設置'
+         WHEN 'stroller_ok' THEN '館内ベビーカー移動可'
+       END
+FROM places p
+JOIN features f ON f.code IN ('nursing_room','diaper_table','elevator','stroller_ok')
+WHERE p.name = '駅前ファミリーモール（サンプル）'
+ON CONFLICT (place_id, feature_id) DO NOTHING;
+
+-- 10) 親子レストラン みらい（サンプル）: 飲食店（子連れ歓迎）
+INSERT INTO places (id, name, category_id, description, address, geog, created_at, updated_at)
+SELECT uuid_generate_v4(), '親子レストラン みらい（サンプル）', c.id,
+       '子連れ歓迎のレストラン。キッズメニューとアレルギー表示あり。',
+       '東京都中央区八重洲',
+       ST_SetSRID(ST_MakePoint(139.7730, 35.6800), 4326)::geography,
+       NOW(), NOW()
+FROM categories c
+WHERE c.code = 'restaurant'
+  AND NOT EXISTS (SELECT 1 FROM places p WHERE p.name = '親子レストラン みらい（サンプル）');
+
+INSERT INTO place_features (place_id, feature_id, value, detail)
+SELECT p.id, f.id, 1,
+       CASE f.code
+         WHEN 'kids_menu' THEN '幼児向けハーフサイズ提供'
+         WHEN 'allergy_label' THEN '主要アレルゲン7品目表示'
+         WHEN 'diaper_table' THEN '店内トイレに交換台あり'
+         WHEN 'stroller_ok' THEN 'ベビーカーでの入店可'
+       END
+FROM places p
+JOIN features f ON f.code IN ('kids_menu','allergy_label','diaper_table','stroller_ok')
+WHERE p.name = '親子レストラン みらい（サンプル）'
+ON CONFLICT (place_id, feature_id) DO NOTHING;
+
+COMMIT;
