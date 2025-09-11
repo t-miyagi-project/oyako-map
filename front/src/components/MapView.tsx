@@ -10,6 +10,12 @@ import type { PlaceListItem } from "@/lib/api";
 type Props = {
   center: { lat: number; lng: number };
   places: PlaceListItem[];
+  // 選択中の施設ID（リストクリックやピンクリックで更新される）
+  selectedId?: string | null;
+  // ピンがクリックされたときに親へ通知する
+  onSelect?: (id: string) => void;
+  // 親から高さ(px)を指定する場合に使用（未指定時は既定の高さを使用）
+  heightPx?: number;
 };
 
 /**
@@ -19,7 +25,7 @@ type Props = {
  * - ピンは MarkerClusterer でクラスタリングする
  * - 現在地用のマーカー（青色）を中央に表示する
  */
-export default function MapView({ center, places }: Props) {
+export default function MapView({ center, places, selectedId, onSelect, heightPx }: Props) {
   // 地図を描画するDOM要素のref
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   // google.maps.Map のインスタンス保持
@@ -28,6 +34,15 @@ export default function MapView({ center, places }: Props) {
   const selfMarkerRef = useRef<google.maps.Marker | null>(null);
   // クラスタラー
   const clustererRef = useRef<MarkerClusterer | null>(null);
+  // 施設ID→マーカーの対応表
+  const markersByIdRef = useRef<Map<string, google.maps.Marker>>(new Map());
+  // 選択中のマーカーID（前回値の保持）
+  const selectedIdRef = useRef<string | null>(null);
+  // ピンの情報を表示する InfoWindow
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  // 施設ID→Placeデータ（InfoWindow表示用に参照）
+  const placeByIdRef = useRef<Map<string, PlaceListItem>>(new Map());
+  // ピンのアイコンは Google Maps の既定（変更しない）
 
   useEffect(() => {
     // Google Maps APIを読み込んで地図を初期化
@@ -85,9 +100,15 @@ export default function MapView({ center, places }: Props) {
       // 既存のクラスタ/マーカーを破棄
       if (clustererRef.current) {
         clustererRef.current.clearMarkers();
-        clustererRef.current.setMap(null as any);
+        clustererRef.current.setMap(null);
         clustererRef.current = null;
       }
+      // 既存マップ上のピン参照もクリア
+      markersByIdRef.current.forEach((m) => m.setMap(null));
+      markersByIdRef.current.clear();
+      placeByIdRef.current.clear();
+
+      // ピンのアイコンは既定を使用するため初期化処理は不要
 
       // places からピンを生成（lat/lng があるもののみ）
       const markers: google.maps.Marker[] = [];
@@ -96,11 +117,24 @@ export default function MapView({ center, places }: Props) {
         const lng = p.location?.lng;
         if (typeof lat !== "number" || typeof lng !== "number") continue;
 
+        // マーカー生成（Google Maps の既定アイコンを使用）
         const m = new google.maps.Marker({
           position: { lat, lng },
           title: p.name,
         });
+        // クリック時は InfoWindow を開き、選択IDを親へ通知
+        m.addListener("click", () => {
+          // 名前と距離の簡易表示
+          const km = (p.location.distance_m / 1000).toFixed(2);
+          if (!infoWindowRef.current) infoWindowRef.current = new google.maps.InfoWindow();
+          infoWindowRef.current.setContent(`<div style="font-size:12px;line-height:1.4"><strong>${p.name}</strong><div>${km} km</div></div>`);
+          infoWindowRef.current.open({ map: mapRef.current!, anchor: m });
+          // 選択を親へ通知
+          onSelect?.(p.id);
+        });
         markers.push(m);
+        markersByIdRef.current.set(p.id, m);
+        placeByIdRef.current.set(p.id, p);
       }
 
       // クラスタリングして地図に表示
@@ -115,7 +149,49 @@ export default function MapView({ center, places }: Props) {
     };
   }, [center.lat, center.lng, places]);
 
+  // 選択IDの変化に応じて、該当ピンを強調表示し、地図をpan
+  useEffect(() => {
+    const sid = selectedId ?? null;
+    if (!mapRef.current) return;
+    // 前回選択を元に戻す
+    const prev = selectedIdRef.current;
+    if (prev && markersByIdRef.current.has(prev)) {
+      const prevMarker = markersByIdRef.current.get(prev)!;
+      prevMarker.setZIndex(undefined as unknown as number);
+      // 前回のバウンスを停止
+      prevMarker.setAnimation(null);
+    }
+    // 新たな選択を強調
+    if (sid && markersByIdRef.current.has(sid)) {
+      const mk = markersByIdRef.current.get(sid)!;
+      mk.setZIndex(999);
+      const pos = mk.getPosition();
+      if (pos) {
+        mapRef.current.panTo(pos);
+      }
+      // バウンス（短時間）を付与
+      mk.setAnimation(google.maps.Animation.BOUNCE);
+      setTimeout(() => mk.setAnimation(null), 1400);
+      // リストクリックでも InfoWindow を開く
+      const pl = placeByIdRef.current.get(sid);
+      if (pl) {
+        const km = (pl.location.distance_m / 1000).toFixed(2);
+        if (!infoWindowRef.current) infoWindowRef.current = new google.maps.InfoWindow();
+        infoWindowRef.current.setContent(`<div style=\"font-size:12px;line-height:1.4\"><strong>${pl.name}</strong><div>${km} km</div></div>`);
+        infoWindowRef.current.open({ map: mapRef.current!, anchor: mk });
+      }
+    } else {
+      // 選択が解除された場合は InfoWindow を閉じる
+      infoWindowRef.current?.close();
+    }
+    selectedIdRef.current = sid;
+  }, [selectedId, places]);
+
   return (
-    <div ref={mapDivRef} className="h-[48vh] w-full overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800" />
+    <div
+      ref={mapDivRef}
+      className="w-full overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800"
+      style={heightPx ? { height: `${heightPx}px` } : { height: "48vh" }}
+    />
   );
 }

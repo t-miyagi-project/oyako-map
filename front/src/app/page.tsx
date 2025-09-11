@@ -60,6 +60,15 @@ export default function Page() {
   // 並び替え（UI状態）。初期値は距離順（サーバーの既定ソートに合わせる）
   const [sortKey, setSortKey] = useState<SortKey>("distance");
 
+  // リストと地図の相互連動用：選択中の施設ID
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // リスト側スクロール用の参照
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // ヘッダーの参照（高さを測って残りの高さをリストに割り当てる）
+  const headerRef = useRef<HTMLElement | null>(null);
+  // 画面の高さに応じたリストの高さ（px）
+  const [listHeight, setListHeight] = useState<number | null>(null);
+
   // フィルタドロワーの開閉状態
   const [filterOpen, setFilterOpen] = useState(false);
   // ドロワー内の一時選択（適用時に filters に反映する）
@@ -112,9 +121,10 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords.lat, coords.lng, searchVersion]);
 
-  // 無限スクロール：下部sentinelが可視になったら次のカーソルで読み込み
+  // 無限スクロール：リスト内のsentinelが可視になったら次のカーソルで読み込み
   useEffect(() => {
     const el = sentinelRef.current;
+    const rootEl = listRef.current; // リスト領域だけを監視対象にする
     if (!el) return;
     // rootMarginで早めに発火（手前200px）
     const io = new IntersectionObserver(
@@ -125,11 +135,36 @@ export default function Page() {
           void load(nextCursor);
         }
       },
-      { root: null, rootMargin: "200px", threshold: 0 }
+      { root: rootEl ?? null, rootMargin: "200px", threshold: 0 }
     );
     io.observe(el);
     return () => io.disconnect();
   }, [nextCursor, loading, load]);
+
+  // 画面サイズやヘッダー高さに応じてリストコンテナの高さを調整（md以上のみ固定高にし、smでは自然な縦並び）
+  useEffect(() => {
+    const update = () => {
+      if (typeof window === "undefined") return;
+      const vh = window.innerHeight || 0;
+      const headerH = headerRef.current?.offsetHeight || 0;
+      const isMdUp = window.matchMedia("(min-width: 768px)").matches; // Tailwind md
+      if (isMdUp) {
+        // ヘッダー高さを引いた残りを各領域に割り当て（2カラム時）
+        const h = Math.max(240, vh - headerH);
+        setListHeight(h);
+      } else {
+        // 1カラム時は自然な縦スクロールに任せる
+        setListHeight(null);
+      }
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
 
   // 初期化: URLクエリ/ローカル保存から座標・検索語・並び替え・features を復元し、位置情報の権限状態を取得
   useEffect(() => {
@@ -260,6 +295,28 @@ export default function Page() {
     return arr;
   }, [filtered, sortKey]);
 
+  // 並び替え/フィルタ変更で選択中が見えなくなった場合は選択を解除
+  useEffect(() => {
+    if (!selectedId) return;
+    if (!sorted.some((s) => s.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [sorted, selectedId]);
+
+  // ピン選択やリストクリックで選択が変わったとき、該当カードへ自動スクロール（リスト領域のみスクロールする）
+  useEffect(() => {
+    if (!selectedId) return;
+    const container = listRef.current;
+    const el = document.getElementById(`place-card-${selectedId}`);
+    if (!container || !el) return;
+    // コンテナと要素の相対位置を算出し、コンテナだけをスクロール
+    const contRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const diff = elRect.top - contRect.top; // コンテナ内の要素の見かけ位置
+    const targetScrollTop = container.scrollTop + diff - (container.clientHeight - el.clientHeight) / 2;
+    container.scrollTo({ top: targetScrollTop, behavior: "smooth" });
+  }, [selectedId]);
+
   // 現在地を取得して coords を更新
   const requestGeolocation = () => {
     if (!("geolocation" in navigator)) {
@@ -288,7 +345,7 @@ export default function Page() {
   return (
     <main className="min-h-[100dvh]">
       {/* ヘッダー（検索バー + クイックフィルタ） */}
-      <header className="sticky top-0 z-10 border-b bg-[color:var(--background)]/80 backdrop-blur">
+      <header ref={headerRef} className="sticky top-0 z-10 border-b bg-[color:var(--background)]/80 backdrop-blur">
         <div className="mx-auto w-full max-w-7xl px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="font-semibold">Oyako Map</div>
@@ -330,7 +387,7 @@ export default function Page() {
       </header>
 
       {/* メイン（地図 + 一覧） */}
-      <section className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-4 px-4 py-4 md:grid-cols-12">
+      <section className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-4 px-4 py-0 md:grid-cols-12">
         {/* 地図（Google Maps） */}
         <div className="md:col-span-7 lg:col-span-8">
           <div className="relative">
@@ -338,7 +395,13 @@ export default function Page() {
               <Badge variant="outline">地図</Badge>
             </div>
             {/* 地図のピンもフィルタ後の結果に合わせる */}
-            <MapView center={coords} places={filtered} />
+            <MapView
+              center={coords}
+              places={filtered}
+              selectedId={selectedId}
+              onSelect={(id) => setSelectedId(id)}
+              heightPx={listHeight ?? undefined}
+            />
             <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between">
               <div className="text-xs text-neutral-500">
                 現在地中心
@@ -382,9 +445,22 @@ export default function Page() {
           )}
 
           {/* 並び替え済み配列で描画（距離以外はローカルソート） */}
-          <div className="flex flex-col gap-3">
-            {sorted.map((f) => (
-              <Card key={f.id}>
+          {/* リストは独立スクロール（画面高 - ヘッダー高 分を使用） */}
+          <div
+            ref={listRef}
+            className="flex flex-col gap-3 overflow-y-auto pr-1"
+            style={listHeight ? { height: `${listHeight}px` } : undefined}
+          >
+            {sorted.map((f) => {
+              const isSelected = selectedId === f.id;
+              return (
+                <Card
+                  key={f.id}
+                  id={`place-card-${f.id}`}
+                  onClick={() => setSelectedId(f.id)}
+                  className={isSelected ? "ring-2 ring-primary border-primary" : "cursor-pointer"}
+                  role="button"
+                >
                 <CardHeader className="pb-2">
                   <div className="flex items-baseline justify-between gap-2">
                     <CardTitle>{f.name}</CardTitle>
@@ -404,19 +480,18 @@ export default function Page() {
                     {f.features_summary.includes("stroller_ok") && <Badge variant="secondary">ベビーカーOK</Badge>}
                   </div>
                 </CardContent>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
+            {/* 無限スクロール監視用の要素（リスト末尾で交差したら次ページ取得） */}
+            <div ref={sentinelRef} className="h-8" />
+            {/* フォールバック: もっと見る（Observer非対応や発火失敗時） */}
+            {nextCursor && !loading && (
+              <div className="mb-2 mt-2 flex justify-center">
+                <Button variant="outline" onClick={() => void load(nextCursor)}>もっと見る</Button>
+              </div>
+            )}
           </div>
-
-          {/* 無限スクロール監視用の要素（画面下部で交差したら次ページ取得） */}
-          <div ref={sentinelRef} className="h-8" />
-
-          {/* フォールバック: もっと見る（Observer非対応や発火失敗時） */}
-          {nextCursor && !loading && (
-            <div className="mt-3 flex justify-center">
-              <Button variant="outline" onClick={() => void load(nextCursor)}>もっと見る</Button>
-            </div>
-          )}
         </div>
       </section>
       {/* フィルタドロワー（右スライド） */}
