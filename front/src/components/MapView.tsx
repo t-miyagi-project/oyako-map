@@ -36,6 +36,8 @@ export default function MapView({ center, places, selectedId, onSelect, heightPx
   const selfMarkerRef = useRef<google.maps.Marker | null>(null);
   // クラスタラー
   const clustererRef = useRef<MarkerClusterer | null>(null);
+  // 現在地の周囲を目立たせるための円（m単位のサークル）
+  const selfCircleRef = useRef<google.maps.Circle | null>(null);
   // 施設ID→マーカーの対応表
   const markersByIdRef = useRef<Map<string, google.maps.Marker>>(new Map());
   // 選択中のマーカーID（前回値の保持）
@@ -95,24 +97,50 @@ export default function MapView({ center, places, selectedId, onSelect, heightPx
         mapRef.current.setCenter(center);
       }
 
-      // 現在地マーカー（青色）を更新
+      // 現在地マーカー（視認性を高めたカスタムSVGアイコン）を更新
       if (selfMarkerRef.current) {
         selfMarkerRef.current.setMap(null);
         selfMarkerRef.current = null;
       }
+      if (selfCircleRef.current) {
+        selfCircleRef.current.setMap(null);
+        selfCircleRef.current = null;
+      }
+      // 目立つ同心円（レッド系の外周 + 白縁付きレッドの内円 + 白点）で現在地を表現
+      // - data: URL のSVGとして埋め込み、中央にアンカーする
+      // - さらにサイズを大きく（40px）し、外周のハローも拡大
+      const currentSvg = `
+        <svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'>
+          <circle cx='20' cy='20' r='15' fill='rgba(239,68,68,0.32)'/>
+          <circle cx='20' cy='20' r='11' fill='#ef4444' stroke='white' stroke-width='4'/>
+          <circle cx='20' cy='20' r='4' fill='white'/>
+        </svg>
+      `;
+      const currentIcon: google.maps.Icon = {
+        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(currentSvg),
+        scaledSize: new google.maps.Size(40, 40),
+        anchor: new google.maps.Point(20, 20), // 中央にアンカー
+      };
       selfMarkerRef.current = new google.maps.Marker({
         position: center,
         map: mapRef.current!,
         title: "現在地",
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          fillColor: "#4285F4",
-          fillOpacity: 1,
-          strokeColor: "white",
-          strokeWeight: 2,
-          scale: 6,
-        },
+        icon: currentIcon,
         zIndex: 1000,
+        // 軽いアテンションのためにDROPアニメーションを1回だけ付与
+        animation: google.maps.Animation.DROP,
+      });
+
+      // 現在地をさらに目立たせるため、半径100m程度の淡い円を重ねる（色もレッド系に統一）
+      // - ズームに応じて地図上の見た目サイズは変わるが、位置の把握に有効
+      selfCircleRef.current = new google.maps.Circle({
+        map: mapRef.current!,
+        center,
+        radius: 100, // 100m（必要に応じて調整）
+        fillColor: '#ef4444',
+        fillOpacity: 0.15,
+        strokeColor: '#ef4444',
+        strokeOpacity: 0,
       });
 
       // 既存のクラスタ/マーカーを破棄
