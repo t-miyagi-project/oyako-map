@@ -240,43 +240,90 @@ class PlaceDetailView(APIView):
             )
 
         # 2) 施設本体の取得（カテゴリ含む）
+        # 施設本体 + カテゴリ + place_stats（平均★/件数）を取得
         sql_place = """
             SELECT p.id, p.name, p.description, p.address, p.phone, p.website_url,
                    p.opening_hours_json, p.lat, p.lng,
                    c.code AS category_code, c.label AS category_label,
-                   p.google_place_id, p.data_source, p.created_at, p.updated_at
+                   p.google_place_id, p.data_source,
+                   ps.avg_overall, ps.review_count,
+                   p.created_at, p.updated_at
+            FROM places p
+            JOIN categories c ON c.id = p.category_id
+            LEFT JOIN place_stats ps ON ps.place_id = p.id
+            WHERE p.id = %s
+            LIMIT 1
+        """
+
+        # place_stats が未作成な環境でも動作するようフォールバックを用意
+        sql_place_fallback = """
+            SELECT p.id, p.name, p.description, p.address, p.phone, p.website_url,
+                   p.opening_hours_json, p.lat, p.lng,
+                   c.code AS category_code, c.label AS category_label,
+                   p.google_place_id, p.data_source,
+                   p.created_at, p.updated_at
             FROM places p
             JOIN categories c ON c.id = p.category_id
             WHERE p.id = %s
             LIMIT 1
         """
 
-        with connection.cursor() as cur:
-            cur.execute(sql_place, [str(place_id)])
-            row = cur.fetchone()
+        try:
+            with connection.cursor() as cur:
+                cur.execute(sql_place, [str(place_id)])
+                row = cur.fetchone()
+            using_stats = True
+        except Exception:
+            with connection.cursor() as cur:
+                cur.execute(sql_place_fallback, [str(place_id)])
+                row = cur.fetchone()
+            using_stats = False
 
         if not row:
             return error_response(
                 code="NOT_FOUND", message="place not found", details={"place_id": str(place_id)}, status_code=404
             )
 
-        (
-            pid,
-            name,
-            description,
-            address,
-            phone,
-            website_url,
-            opening_hours_json,
-            lat,
-            lng,
-            category_code,
-            category_label,
-            google_place_id,
-            data_source,
-            created_at,
-            updated_at,
-        ) = row
+        if using_stats:
+            (
+                pid,
+                name,
+                description,
+                address,
+                phone,
+                website_url,
+                opening_hours_json,
+                lat,
+                lng,
+                category_code,
+                category_label,
+                google_place_id,
+                data_source,
+                avg_overall,
+                review_count,
+                created_at,
+                updated_at,
+            ) = row
+        else:
+            (
+                pid,
+                name,
+                description,
+                address,
+                phone,
+                website_url,
+                opening_hours_json,
+                lat,
+                lng,
+                category_code,
+                category_label,
+                google_place_id,
+                data_source,
+                created_at,
+                updated_at,
+            ) = row
+            avg_overall = None
+            review_count = 0
 
         # 3) features（place_features×features）を取得
         sql_features = """
@@ -295,13 +342,60 @@ class PlaceDetailView(APIView):
             for (code, label, value, detail) in feature_rows
         ]
 
-        # 4) rating/photos/sourceメタは現状プレースホルダ or placesカラムから構成
-        rating = {"overall": None, "count": 0, "axes": {}}
-        photos = []  # 将来: photos テーブルから取得
+        # 4) rating/photos/sourceメタ
+        # rating は place_stats の集計値を返す（無い場合は null/0）
+        rating = {
+            "overall": float(avg_overall) if avg_overall is not None else None,
+            "count": int(review_count or 0),
+            "axes": {},  # 軸別平均は将来拡張
+        }
+
+        # 写真（最新順）。storage_path をそのままURLとして返す（MEDIA連携は将来拡張）
+        photos = []
+        try:
+            sql_photos = """
+                SELECT storage_path, width, height, blurhash
+                FROM photos
+                WHERE place_id = %s
+                ORDER BY created_at DESC
+                LIMIT 20
+            """
+            with connection.cursor() as cur:
+                cur.execute(sql_photos, [str(place_id)])
+                photo_rows = cur.fetchall()
+            photos = [
+                {
+                    "url": path,
+                    "width": int(w) if w is not None else None,
+                    "height": int(h) if h is not None else None,
+                    "blurhash": bh,
+                }
+                for (path, w, h, bh) in photo_rows
+            ]
+        except Exception:
+            photos = []
+
+        # 取得元メタ（place_source_meta から最新を参照）
         google_meta = None
         if google_place_id:
-            # 取得元メタ（サマリ）。同期時刻等は将来 place_source_meta から拡張
-            google_meta = {"place_id": google_place_id, "source": "google", "synced_at": None}
+            try:
+                sql_meta = """
+                    SELECT fetched_at
+                    FROM place_source_meta
+                    WHERE place_id = %s
+                    ORDER BY fetched_at DESC
+                    LIMIT 1
+                """
+                with connection.cursor() as cur:
+                    cur.execute(sql_meta, [str(place_id)])
+                    m = cur.fetchone()
+                google_meta = {
+                    "place_id": google_place_id,
+                    "source": "google",
+                    "synced_at": m[0] if m else None,
+                }
+            except Exception:
+                google_meta = {"place_id": google_place_id, "source": "google", "synced_at": None}
 
         # 5) 応答を整形して返却
         return Response(

@@ -37,7 +37,11 @@ export type FetchPlacesParams = {
   sort?: "distance" | "score" | "reviews" | "new"
 }
 
-export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: PlaceListItem[]; next_cursor: string | null }> {
+// 施設一覧取得（AbortSignal対応のため options を許容）
+export async function fetchPlaces(
+  params: FetchPlacesParams,
+  options?: { signal?: AbortSignal }
+): Promise<{ items: PlaceListItem[]; next_cursor: string | null }> {
   // ベースURL（.env の NEXT_PUBLIC_API_BASE_URL から取得）
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
   const u = new URL("/api/places", base)
@@ -66,6 +70,7 @@ export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: P
       "Accept": "application/json",
     },
     credentials: "include", // 将来の認証を見据えCookie送信を許可
+    signal: options?.signal,
   })
 
   // ステータス確認
@@ -83,6 +88,42 @@ export async function fetchPlaces(params: FetchPlacesParams): Promise<{ items: P
 
   // 正常時のデータを返却
   return (await res.json()) as { items: PlaceListItem[]; next_cursor: string | null }
+}
+
+// 施設詳細の型（GET /api/places/{id}）
+export type PlaceDetail = {
+  id: string
+  name: string
+  category: { code: string; label: string }
+  description: string | null
+  address: string | null
+  phone: string | null
+  website_url: string | null
+  opening_hours: any | null
+  location: { lat: number | null; lng: number | null }
+  features: { code: string; label: string; value: number | null; detail?: string | null }[]
+  rating: { overall: number | null; count: number; axes: Record<string, number> }
+  photos: { url: string; width?: number | null; height?: number | null; blurhash?: string | null }[]
+  google: { place_id: string; source: string; synced_at: string | null } | null
+  data_source: string
+  created_at: string
+  updated_at: string
+}
+
+// 施設詳細を取得する（エラー時は共通メッセージ化）
+export async function fetchPlaceDetail(placeId: string): Promise<PlaceDetail> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const u = new URL(`/api/places/${encodeURIComponent(placeId)}`, base)
+  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const data = await res.json()
+      if (data?.error?.message) message = data.error.message
+    } catch {}
+    throw new Error(message)
+  }
+  return (await res.json()) as PlaceDetail
 }
 
 // features マスタを取得する（UIのフィルタドロワーで使用）

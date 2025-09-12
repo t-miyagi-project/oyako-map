@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchPlaces, fetchFeaturesMaster, type PlaceListItem, type FeatureMasterItem } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapView from "@/components/MapView";
+import Link from "next/link";
 
 // 並び替えキーの型（UI内部）。APIは score/reviews を使用するためマッピングを行う。
 type SortKey = "distance" | "overall" | "count" | "new";
@@ -59,6 +60,10 @@ export default function Page() {
   const headerRef = useRef<HTMLElement | null>(null);
   // 画面の高さに応じたリストの高さ（px）
   const [listHeight, setListHeight] = useState<number | null>(null);
+  // 検索半径（m）。初期値 3000m。マップ操作で変更候補を受け取って適用する。
+  const [radiusM, setRadiusM] = useState<number>(3000);
+  // マップ操作後の未適用ビューポート（中心/半径）。
+  const [pendingViewport, setPendingViewport] = useState<{ lat: number; lng: number; radius_m: number } | null>(null);
 
   // フィルタドロワーの開閉状態
   const [filterOpen, setFilterOpen] = useState(false);
@@ -102,7 +107,7 @@ export default function Page() {
         const res = await fetchPlaces({
           lat: coords.lat,
           lng: coords.lng,
-          radius_m: 3000,
+          radius_m: radiusM,
           limit: 20,
           cursor,
           q: query,
@@ -123,14 +128,14 @@ export default function Page() {
         setLoading(false);
       }
     },
-    [coords.lat, coords.lng, query, selectedFeatures, sortKey]
+    [coords.lat, coords.lng, query, selectedFeatures, sortKey, radiusM]
   );
 
   // 初回と検索トリガ/座標変更/並び替え/feature変更時に読み込み（サーバー側でfeaturesを適用するため）
   useEffect(() => {
     void load(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, searchVersion, sortKey, selectedFeatures]);
+  }, [coords.lat, coords.lng, searchVersion, sortKey, selectedFeatures, radiusM]);
 
   // 無限スクロール：リスト内のsentinelが可視になったら次のカーソルで読み込み
   useEffect(() => {
@@ -252,6 +257,7 @@ export default function Page() {
       const u = new URL(window.location.href);
       u.searchParams.set("lat", String(coords.lat));
       u.searchParams.set("lng", String(coords.lng));
+      u.searchParams.set("radius_m", String(radiusM));
       if (query.trim()) {
         u.searchParams.set("q", query.trim());
       } else {
@@ -271,7 +277,7 @@ export default function Page() {
       // 失敗しても致命的ではないため握りつぶす
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, query, sortKey, selectedFeatures]);
+  }, [coords.lat, coords.lng, query, sortKey, selectedFeatures, radiusM]);
 
   // サーバー側で features フィルタを適用するため、クライアント側では順序維持のため items をそのまま使う
   const filtered = useMemo(() => items, [items])
@@ -394,6 +400,17 @@ export default function Page() {
               selectedId={selectedId}
               onSelect={(id) => setSelectedId(id)}
               heightPx={listHeight ?? undefined}
+              // マップの移動/ズーム後に中心と半径（概算）を受け取り、未適用として保持
+              onViewportChanged={(v) => {
+                // 現在の適用済み中心/半径との差分が小さい場合は無視（移動ないと判断）
+                const dLat = Math.abs(v.center.lat - coords.lat);
+                const dLng = Math.abs(v.center.lng - coords.lng);
+                const centerMoved = dLat > 0.0005 || dLng > 0.0005; // おおよそ50m程度
+                const radiusChanged = Math.abs(v.radius_m - radiusM) / Math.max(1, radiusM) > 0.1; // 10%以上
+                if (centerMoved || radiusChanged) {
+                  setPendingViewport({ lat: v.center.lat, lng: v.center.lng, radius_m: v.radius_m });
+                }
+              }}
             />
             <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between">
               <div className="text-xs text-neutral-500">
@@ -406,6 +423,24 @@ export default function Page() {
                 現在地取得
               </Button>
             </div>
+            {/* エリア再検索の提案（未適用ビューポートがある時に表示） */}
+            {pendingViewport && (
+              <div className="absolute left-3 top-14 z-10">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // マップの中心/半径を適用して再検索
+                    setCoords({ lat: pendingViewport.lat, lng: pendingViewport.lng });
+                    setRadiusM(Math.max(500, Math.min(30000, Math.round(pendingViewport.radius_m))));
+                    setPendingViewport(null);
+                    // 即時に先頭から再取得
+                    void load(null);
+                  }}
+                >
+                  このエリアで再検索
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -457,7 +492,10 @@ export default function Page() {
                 <CardHeader className="pb-2">
                   <div className="flex items-baseline justify-between gap-2">
                     <CardTitle>{f.name}</CardTitle>
-                    <div className="text-sm text-neutral-500">{(f.location.distance_m / 1000).toFixed(2)}km</div>
+                    <div className="flex items-center gap-3 text-sm text-neutral-500">
+                      <div>{(f.location.distance_m / 1000).toFixed(2)}km</div>
+                      <Link className="text-blue-600 hover:underline" href={`/places/${f.id}`}>詳細</Link>
+                    </div>
                   </div>
                   <div className="text-xs text-neutral-500">{f.category.label}</div>
                 </CardHeader>

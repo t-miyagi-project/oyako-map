@@ -16,6 +16,8 @@ type Props = {
   onSelect?: (id: string) => void;
   // 親から高さ(px)を指定する場合に使用（未指定時は既定の高さを使用）
   heightPx?: number;
+  // ビューポート変更時の通知（中心・推定半径m）。ドラッグ/ズーム後の idle で呼ばれる。
+  onViewportChanged?: (v: { center: { lat: number; lng: number }; radius_m: number }) => void;
 };
 
 /**
@@ -25,7 +27,7 @@ type Props = {
  * - ピンは MarkerClusterer でクラスタリングする
  * - 現在地用のマーカー（青色）を中央に表示する
  */
-export default function MapView({ center, places, selectedId, onSelect, heightPx }: Props) {
+export default function MapView({ center, places, selectedId, onSelect, heightPx, onViewportChanged }: Props) {
   // 地図を描画するDOM要素のref
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   // google.maps.Map のインスタンス保持
@@ -43,6 +45,22 @@ export default function MapView({ center, places, selectedId, onSelect, heightPx
   // 施設ID→Placeデータ（InfoWindow表示用に参照）
   const placeByIdRef = useRef<Map<string, PlaceListItem>>(new Map());
   // ピンのアイコンは Google Maps の既定（変更しない）
+  // 初回 idle の実行済みフラグ（初期化直後の idle 通知をスキップしたい場合に使用）
+  const initializedRef = useRef(false);
+
+  // 簡易の距離計算（ハーサイン）。m単位を返す。
+  const haversineMeters = (a: google.maps.LatLngLiteral, b: google.maps.LatLngLiteral) => {
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const R = 6371000; // 地球半径[m]
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const la1 = toRad(a.lat);
+    const la2 = toRad(b.lat);
+    const sin1 = Math.sin(dLat / 2);
+    const sin2 = Math.sin(dLng / 2);
+    const h = sin1 * sin1 + Math.cos(la1) * Math.cos(la2) * sin2 * sin2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  };
 
   useEffect(() => {
     // Google Maps APIを読み込んで地図を初期化
@@ -127,7 +145,7 @@ export default function MapView({ center, places, selectedId, onSelect, heightPx
           // 名前と距離の簡易表示
           const km = (p.location.distance_m / 1000).toFixed(2);
           if (!infoWindowRef.current) infoWindowRef.current = new google.maps.InfoWindow();
-          infoWindowRef.current.setContent(`<div style="font-size:12px;line-height:1.4"><strong>${p.name}</strong><div>${km} km</div></div>`);
+          infoWindowRef.current.setContent(`<div style="font-size:12px;line-height:1.4"><strong>${p.name}</strong><div>${km} km</div><div style=\"margin-top:4px\"><a href=\"/places/${p.id}\" style=\"color:#2563eb;text-decoration:underline\">詳細</a></div></div>`);
           infoWindowRef.current.open({ map: mapRef.current!, anchor: m });
           // 選択を親へ通知
           onSelect?.(p.id);
@@ -141,6 +159,35 @@ export default function MapView({ center, places, selectedId, onSelect, heightPx
       clustererRef.current = new MarkerClusterer({
         map: mapRef.current!,
         markers,
+      });
+
+      // ビューポート変更（idle）時に中心と半径を親へ通知
+      mapRef.current.addListener("idle", () => {
+        if (!mapRef.current) return;
+        const c = mapRef.current.getCenter();
+        const b = mapRef.current.getBounds();
+        if (!c || !b) return;
+        const centerLiteral = { lat: c.lat(), lng: c.lng() };
+        // 半径は中心からビューポート四隅までの最大距離を採用（概算）。
+        const ne = b.getNorthEast();
+        const sw = b.getSouthWest();
+        const nw = new google.maps.LatLng(ne.lat(), sw.lng());
+        const se = new google.maps.LatLng(sw.lat(), ne.lng());
+        const corners: google.maps.LatLngLiteral[] = [
+          { lat: ne.lat(), lng: ne.lng() },
+          { lat: sw.lat(), lng: sw.lng() },
+          { lat: nw.lat(), lng: nw.lng() },
+          { lat: se.lat(), lng: se.lng() },
+        ];
+        const radius = Math.max(
+          ...corners.map((pt) => haversineMeters(centerLiteral, { lat: pt.lat, lng: pt.lng }))
+        );
+        // 初期化直後の idle はスキップし、以降のユーザー操作（ドラッグ/ズーム）で通知
+        if (!initializedRef.current) {
+          initializedRef.current = true;
+          return;
+        }
+        onViewportChanged?.({ center: centerLiteral, radius_m: Math.round(radius) });
       });
     });
 
@@ -177,7 +224,7 @@ export default function MapView({ center, places, selectedId, onSelect, heightPx
       if (pl) {
         const km = (pl.location.distance_m / 1000).toFixed(2);
         if (!infoWindowRef.current) infoWindowRef.current = new google.maps.InfoWindow();
-        infoWindowRef.current.setContent(`<div style=\"font-size:12px;line-height:1.4\"><strong>${pl.name}</strong><div>${km} km</div></div>`);
+        infoWindowRef.current.setContent(`<div style=\"font-size:12px;line-height:1.4\"><strong>${pl.name}</strong><div>${km} km</div><div style=\"margin-top:4px\"><a href=\"/places/${pl.id}\" style=\"color:#2563eb;text-decoration:underline\">詳細</a></div></div>`);
         infoWindowRef.current.open({ map: mapRef.current!, anchor: mk });
       }
     } else {
