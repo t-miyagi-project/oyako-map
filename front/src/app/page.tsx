@@ -5,7 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { fetchPlaces, fetchFeaturesMaster, type PlaceListItem, type FeatureMasterItem } from "@/lib/api";
+import {
+  fetchPlaces,
+  fetchFeaturesMaster,
+  fetchCategoriesMaster,
+  type PlaceListItem,
+  type FeatureMasterItem,
+  type CategoryMasterItem,
+} from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapView from "@/components/MapView";
 import Link from "next/link";
@@ -19,15 +26,7 @@ const SORT_LABEL: Record<SortKey, string> = {
   new: "新着順",
 };
 
-// フィルタ（features）候補一覧は API から動的取得する
-
-// クイックフィルタ（UI表示用）
-const QUICK_FILTERS = [
-  { key: "nursing_room", label: "授乳室" },
-  { key: "diaper_table", label: "おむつ台" },
-  { key: "kids_toilet", label: "キッズトイレ" },
-  { key: "stroller_ok", label: "ベビーカーOK" },
-] as const;
+// フィルタ（features/categories）候補一覧は API から動的取得する
 
 export default function Page() {
   // ルーター/URLクエリ
@@ -36,8 +35,10 @@ export default function Page() {
 
   // 検索語（q）
   const [query, setQuery] = useState("");
-  // クイックフィルタのON/OFF状態
+  // サービス（features）フィルタのON/OFF状態
   const [filters, setFilters] = useState<Record<string, boolean>>({});
+  // カテゴリフィルタ（クイックフィルタの選択状態）
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   // 現在地（初期値は東京駅付近。URL/ローカル保存で上書き）
   const [coords, setCoords] = useState<{ lat: number; lng: number }>({ lat: 35.6812, lng: 139.7671 });
   // 読み込み/エラー状態
@@ -73,6 +74,10 @@ export default function Page() {
   const [featureOptions, setFeatureOptions] = useState<FeatureMasterItem[] | null>(null);
   const [featureLoading, setFeatureLoading] = useState(false);
   const [featureError, setFeatureError] = useState<string | null>(null);
+  // カテゴリマスタ（クイックフィルタ表示用）
+  const [categoryOptions, setCategoryOptions] = useState<CategoryMasterItem[]>([]);
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   // 検索トリガ（ボタン押下でインクリメントし、useEffect依存に含める）
   const [searchVersion, setSearchVersion] = useState(0);
@@ -81,8 +86,28 @@ export default function Page() {
   // 無限スクロール用の監視対象（リスト最下部に配置）
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // クイックフィルタのトグル
-  const toggleFilter = (key: string) => setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+  // カテゴリマスタを初回に読み込み、クイックフィルタへ反映する
+  useEffect(() => {
+    let cancelled = false;
+    setCategoryLoading(true);
+    setCategoryError(null);
+    fetchCategoriesMaster()
+      .then((res) => {
+        if (cancelled) return;
+        setCategoryOptions(res.items);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        setCategoryError(e?.message ?? "カテゴリの読み込みに失敗しました");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setCategoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 選択中の features（filters の true キーを抽出）
   const selectedFeatures = useMemo(() => {
@@ -111,6 +136,7 @@ export default function Page() {
           limit: 20,
           cursor,
           q: query,
+          category: selectedCategory ?? undefined,
           features: selectedFeatures,
           sort: sortKeyToApi(sortKey),
         });
@@ -128,14 +154,14 @@ export default function Page() {
         setLoading(false);
       }
     },
-    [coords.lat, coords.lng, query, selectedFeatures, sortKey, radiusM]
+    [coords.lat, coords.lng, query, selectedCategory, selectedFeatures, sortKey, radiusM]
   );
 
   // 初回と検索トリガ/座標変更/並び替え/feature変更時に読み込み（サーバー側でfeaturesを適用するため）
   useEffect(() => {
     void load(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, searchVersion, sortKey, selectedFeatures, radiusM]);
+  }, [coords.lat, coords.lng, searchVersion, sortKey, selectedCategory, selectedFeatures, radiusM]);
 
   // 無限スクロール：リスト内のsentinelが可視になったら次のカーソルで読み込み
   useEffect(() => {
@@ -197,6 +223,7 @@ export default function Page() {
         if (v === "distance" || v === "overall" || v === "count" || v === "new") return v as SortKey;
         return "distance";
       })(sRaw);
+      const categoryQ = searchParams?.get("category");
       // features は複数指定（仕様: features=nursing_room&features=diaper_table）。features[] 形式にも両対応
       const fQ = [
         ...(searchParams?.getAll("features") ?? []),
@@ -208,6 +235,9 @@ export default function Page() {
         setSortKey(sQ);
       } else {
         setSortKey("distance");
+      }
+      if (categoryQ) {
+        setSelectedCategory(categoryQ);
       }
       // features の復元（Record<string, boolean> へ展開）
       if (fQ.length > 0) {
@@ -266,6 +296,11 @@ export default function Page() {
       // 並び替えをURLへ反映（API仕様に合わせて score/reviews を使用）
       const sortForUrl = sortKey === "overall" ? "score" : sortKey === "count" ? "reviews" : sortKey;
       u.searchParams.set("sort", sortForUrl);
+      if (selectedCategory) {
+        u.searchParams.set("category", selectedCategory);
+      } else {
+        u.searchParams.delete("category");
+      }
       // features（複数）をURLへ反映
       u.searchParams.delete("features");
       u.searchParams.delete("features[]");
@@ -277,7 +312,7 @@ export default function Page() {
       // 失敗しても致命的ではないため握りつぶす
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords.lat, coords.lng, query, sortKey, selectedFeatures, radiusM]);
+  }, [coords.lat, coords.lng, query, sortKey, selectedCategory, selectedFeatures, radiusM]);
 
   // サーバー側で features フィルタを適用するため、クライアント側では順序維持のため items をそのまま使う
   const filtered = useMemo(() => items, [items])
@@ -345,20 +380,31 @@ export default function Page() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="スポット名・カテゴリを検索"
+              placeholder="スポット名検索"
               className="flex-1"
             />
             <Button onClick={() => incrementSearch()}>検索</Button>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {QUICK_FILTERS.map(({ key, label }) => {
-              const active = !!filters[key]
-              return (
-                <Button key={key} variant={active ? "default" : "outline"} size="sm" onClick={() => toggleFilter(key)}>
-                  {label}
-                </Button>
-              )
-            })}
+            {categoryLoading && <span className="text-sm text-neutral-500">カテゴリ読込中...</span>}
+            {categoryError && !categoryLoading && (
+              <span className="text-sm text-red-600">カテゴリ取得に失敗しました: {categoryError}</span>
+            )}
+            {!categoryLoading &&
+              !categoryError &&
+              categoryOptions.map((cat) => {
+                const active = selectedCategory === cat.code;
+                return (
+                  <Button
+                    key={cat.code}
+                    variant={active ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(active ? null : cat.code)}
+                  >
+                    {cat.label}
+                  </Button>
+                );
+              })}
             {/* ドロワーを開くボタン（選択数をバッジ表示） */}
             <Button
               variant="outline"

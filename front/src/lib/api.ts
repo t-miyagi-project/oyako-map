@@ -23,6 +23,13 @@ export type FeatureMasterItem = {
   description?: string | null
 }
 
+// カテゴリマスタの型（トップ画面のクイックフィルタで使用）
+export type CategoryMasterItem = {
+  code: string
+  label: string
+  sort: number
+}
+
 export type FetchPlacesParams = {
   lat: number
   lng: number
@@ -140,4 +147,20 @@ export async function fetchFeaturesMaster(): Promise<{ items: FeatureMasterItem[
     throw new Error(message)
   }
   return (await res.json()) as { items: FeatureMasterItem[] }
+}
+
+// カテゴリ一覧を取得する（クイックフィルタのボタン生成に利用）
+export async function fetchCategoriesMaster(): Promise<{ items: CategoryMasterItem[] }> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const u = new URL("/api/categories", base)
+  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const data = await res.json()
+      if (data?.error?.message) message = data.error.message
+    } catch {}
+    throw new Error(message)
+  }
+  return (await res.json()) as { items: CategoryMasterItem[] }
 }
