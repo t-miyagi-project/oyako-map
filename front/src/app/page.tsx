@@ -26,6 +26,22 @@ const SORT_LABEL: Record<SortKey, string> = {
   new: "新着順",
 };
 
+// 距離選択肢（m単位）
+const RADIUS_OPTIONS = [
+  { value: 500, label: "0.5km" },
+  { value: 1000, label: "1km" },
+  { value: 3000, label: "3km" },
+  { value: 5000, label: "5km" },
+  { value: 10000, label: "10km" },
+] as const;
+
+const formatDistance = (meters: number) => {
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(1)}km`;
+  }
+  return `${Math.round(meters)}m`;
+};
+
 // フィルタ（features/categories）候補一覧は API から動的取得する
 
 export default function Page() {
@@ -224,6 +240,7 @@ export default function Page() {
         return "distance";
       })(sRaw);
       const categoryQ = searchParams?.get("category");
+      const radiusQ = searchParams?.get("radius_m");
       // features は複数指定（仕様: features=nursing_room&features=diaper_table）。features[] 形式にも両対応
       const fQ = [
         ...(searchParams?.getAll("features") ?? []),
@@ -238,6 +255,20 @@ export default function Page() {
       }
       if (categoryQ) {
         setSelectedCategory(categoryQ);
+      }
+      if (radiusQ) {
+        const radiusNum = Number(radiusQ);
+        if (!Number.isNaN(radiusNum) && radiusNum > 0) {
+          setRadiusM(radiusNum);
+        }
+      } else if (typeof window !== "undefined") {
+        const storedRadius = window.localStorage.getItem("oyako:lastRadius");
+        if (storedRadius) {
+          const radiusNum = Number(storedRadius);
+          if (!Number.isNaN(radiusNum) && radiusNum > 0) {
+            setRadiusM(radiusNum);
+          }
+        }
       }
       // features の復元（Record<string, boolean> へ展開）
       if (fQ.length > 0) {
@@ -282,6 +313,7 @@ export default function Page() {
       // ローカル保存
       if (typeof window !== "undefined") {
         window.localStorage.setItem("oyako:lastCoords", JSON.stringify(coords));
+        window.localStorage.setItem("oyako:lastRadius", String(radiusM));
       }
       // URLクエリを更新（現在のパスを維持して置換）
       const u = new URL(window.location.href);
@@ -405,6 +437,7 @@ export default function Page() {
                   </Button>
                 );
               })}
+            
             {/* ドロワーを開くボタン（選択数をバッジ表示） */}
             <Button
               variant="outline"
@@ -426,7 +459,29 @@ export default function Page() {
             >
               フィルタ{selectedFeatures.length > 0 ? `(${selectedFeatures.length})` : ""}
             </Button>
-            <div className="ml-auto text-xs text-neutral-500">中心: {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}</div>
+            <div className="flex items-center gap-2 text-sm text-neutral-600">
+              <span>検索範囲</span>
+              <select
+                className="h-8 rounded-md border border-neutral-200 bg-transparent px-2 text-sm dark:border-neutral-800"
+                value={String(radiusM)}
+                onChange={(e) => setRadiusM(Number(e.target.value))}
+                aria-label="検索範囲"
+              >
+                {RADIUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={String(opt.value)}>
+                    {opt.label}
+                  </option>
+                ))}
+                {!RADIUS_OPTIONS.some((opt) => opt.value === radiusM) && (
+                  <option value={String(radiusM)}>
+                    {(radiusM / 1000).toFixed(1)}km
+                  </option>
+                )}
+              </select>
+            </div>
+            <div className="ml-auto text-xs text-neutral-500">
+              中心: {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)} / 範囲: {formatDistance(radiusM)}
+            </div>
           </div>
         </div>
       </header>
