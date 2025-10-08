@@ -30,6 +30,13 @@ export type CategoryMasterItem = {
   sort: number
 }
 
+// 年齢帯マスタの型（レビュー投稿フォームの選択肢で使用）
+export type AgeBandMasterItem = {
+  code: string
+  label: string
+  sort: number
+}
+
 export type FetchPlacesParams = {
   lat: number
   lng: number
@@ -163,4 +170,20 @@ export async function fetchCategoriesMaster(): Promise<{ items: CategoryMasterIt
     throw new Error(message)
   }
   return (await res.json()) as { items: CategoryMasterItem[] }
+}
+
+// 年齢帯一覧を取得する（レビュー投稿時のセレクトに使用）
+export async function fetchAgeBandsMaster(): Promise<{ items: AgeBandMasterItem[] }> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const u = new URL("/api/age-bands", base)
+  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`
+    try {
+      const data = await res.json()
+      if (data?.error?.message) message = data.error.message
+    } catch {}
+    throw new Error(message)
+  }
+  return (await res.json()) as { items: AgeBandMasterItem[] }
 }
