@@ -11,10 +11,10 @@ const STAR_VALUES = [1, 2, 3, 4, 5] as const;
 const MAX_PHOTOS = 5;
 const REVIEW_AXES = [
   { code: "cleanliness", label: "清潔さ" },
-  { code: "nursing_room", label: "授乳室" },
-  { code: "diaper_table", label: "おむつ交換" },
-  { code: "stroller", label: "ベビーカー移動" },
-  { code: "kids_menu", label: "キッズメニュー" },
+  { code: "safety", label: "安全" },
+  { code: "noise", label: "騒音" },
+  { code: "staff", label: "スタッフ対応" },
+  { code: "crowd", label: "混雑" },
 ] as const;
 
 type AxisScoreMap = Record<string, number>;
@@ -176,7 +176,7 @@ export default function ReviewPostPage() {
               >
                 <option value="">未選択</option>
                 {ageBands.map((band) => (
-                  <option key={band.code} value={band.code}>{band.label}</option>
+                  <option key={band.id} value={band.id}>{band.label}</option>
                 ))}
               </select>
             </label>

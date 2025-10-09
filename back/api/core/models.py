@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ class AgeBand(models.Model):
 
     class Meta:
         db_table = "age_bands"
+        managed = False
 
     def __str__(self) -> str:  # 表示用
         return f"{self.label}({self.code})"
@@ -29,6 +31,7 @@ class Category(models.Model):
 
     class Meta:
         db_table = "categories"
+        managed = False
 
     def __str__(self) -> str:
         return f"{self.label}({self.code})"
@@ -46,6 +49,7 @@ class Feature(models.Model):
 
     class Meta:
         db_table = "features"
+        managed = False
 
     def __str__(self) -> str:
         return f"{self.label}({self.code})"
@@ -81,3 +85,21 @@ class Place(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class UserProfile(models.Model):
+    """ユーザーの拡張プロフィール情報。
+    - ニックネーム、居住エリア、子どもの年齢帯など任意項目を保持する
+    """
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
+    nickname = models.CharField(max_length=150, blank=True, null=True)
+    home_area = models.CharField(max_length=150, blank=True, null=True)
+    child_age_band = models.ForeignKey(AgeBand, on_delete=models.SET_NULL, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "user_profiles"
+
+    def __str__(self) -> str:
+        return f"Profile({self.user_id})"

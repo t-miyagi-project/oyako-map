@@ -1,5 +1,12 @@
 from django.contrib import admin
 from django.urls import path
+from core.auth_views import (
+    SignupView,
+    LoginView,
+    RefreshView,
+    LogoutView,
+    MeView,
+)
 from core.views import (
     PingView,
     PlacesSearchView,
@@ -13,6 +20,12 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, Sp
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/ping/', PingView.as_view(), name='ping'),
+    # 認証
+    path('api/auth/signup', SignupView.as_view(), name='auth-signup'),
+    path('api/auth/login', LoginView.as_view(), name='auth-login'),
+    path('api/auth/refresh', RefreshView.as_view(), name='auth-refresh'),
+    path('api/auth/logout', LogoutView.as_view(), name='auth-logout'),
+    path('api/me', MeView.as_view(), name='me'),
     # 施設検索（距離順・半径フィルタ・limit・cursor）
     path('api/places', PlacesSearchView.as_view(), name='places-search'),
     # 施設詳細

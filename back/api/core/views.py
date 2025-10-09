@@ -457,9 +457,9 @@ class AgeBandsListView(APIView):
     """
 
     def get(self, request):
-        sql = "SELECT code, label, sort FROM age_bands ORDER BY sort, code"
+        sql = "SELECT id, code, label, sort FROM age_bands ORDER BY sort, code"
         with connection.cursor() as cur:
             cur.execute(sql)
             rows = cur.fetchall()
-        items = [{"code": code, "label": label, "sort": int(sort)} for (code, label, sort) in rows]
+        items = [{"id": str(id_), "code": code, "label": label, "sort": int(sort)} for (id_, code, label, sort) in rows]
         return Response({"items": items})

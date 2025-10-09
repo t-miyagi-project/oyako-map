@@ -1,4 +1,6 @@
-from django.db import migrations
+import uuid
+
+from django.db import migrations, models
 
 
 SQL = r"""
@@ -82,6 +84,51 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL(sql=SQL, reverse_sql=""),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunSQL(sql=SQL, reverse_sql=""),
+            ],
+            state_operations=[
+                migrations.CreateModel(
+                    name="AgeBand",
+                    fields=[
+                        ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
+                        ("code", models.CharField(max_length=100, unique=True)),
+                        ("label", models.CharField(max_length=100)),
+                        ("sort", models.IntegerField(default=100)),
+                    ],
+                    options={
+                        "db_table": "age_bands",
+                        "managed": False,
+                    },
+                ),
+                migrations.CreateModel(
+                    name="Category",
+                    fields=[
+                        ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
+                        ("code", models.CharField(max_length=100, unique=True)),
+                        ("label", models.CharField(max_length=100)),
+                        ("sort", models.IntegerField(default=100)),
+                    ],
+                    options={
+                        "db_table": "categories",
+                        "managed": False,
+                    },
+                ),
+                migrations.CreateModel(
+                    name="Feature",
+                    fields=[
+                        ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
+                        ("code", models.CharField(max_length=100, unique=True)),
+                        ("label", models.CharField(max_length=100)),
+                        ("category", models.CharField(blank=True, max_length=100, null=True)),
+                        ("description", models.TextField(blank=True, null=True)),
+                    ],
+                    options={
+                        "db_table": "features",
+                        "managed": False,
+                    },
+                ),
+            ],
+        ),
     ]
-

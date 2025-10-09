@@ -3,6 +3,8 @@
 //   ※現時点のサーバーは sort=distance のみ対応のため、並び替え（総合/件数/新着）はフロント側でローカルソートする
 // - エラー時は例外を投げる（呼び出し元でトースト/メッセージを表示）
 
+import { authFetch, clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/auth"
+
 export type PlaceListItem = {
   id: string
   name: string
@@ -32,9 +34,32 @@ export type CategoryMasterItem = {
 
 // 年齢帯マスタの型（レビュー投稿フォームの選択肢で使用）
 export type AgeBandMasterItem = {
+  id: string
   code: string
   label: string
   sort: number
+}
+
+export type ChildAgeBand = {
+  id: string
+  code: string
+  label: string
+  sort: number
+}
+
+export type CurrentUser = {
+  id: string
+  email: string
+  role: string
+  nickname: string | null
+  home_area: string | null
+  child_age_band: ChildAgeBand | null
+}
+
+type AuthResponse = {
+  user: CurrentUser
+  access_token: string
+  refresh_token: string
 }
 
 export type FetchPlacesParams = {
@@ -78,12 +103,16 @@ export async function fetchPlaces(
   u.searchParams.set("sort", params.sort ?? "distance")
 
   // API呼び出し
+  const headers: Record<string, string> = {
+    "Accept": "application/json",
+  }
+  const access = getAccessToken()
+  if (access) {
+    headers["Authorization"] = `Bearer ${access}`
+  }
   const res = await fetch(u.toString(), {
     method: "GET",
-    headers: {
-      "Accept": "application/json",
-    },
-    credentials: "include", // 将来の認証を見据えCookie送信を許可
+    headers,
     signal: options?.signal,
   })
 
@@ -186,4 +215,106 @@ export async function fetchAgeBandsMaster(): Promise<{ items: AgeBandMasterItem[
     throw new Error(message)
   }
   return (await res.json()) as { items: AgeBandMasterItem[] }
+}
+
+function extractErrorMessage(res: Response, fallback?: string) {
+  return res
+    .json()
+    .then((data: any) => data?.error?.message ?? fallback ?? `HTTP ${res.status}`)
+    .catch(() => fallback ?? `HTTP ${res.status}`)
+}
+
+async function handleAuthResponse(res: Response): Promise<AuthResponse> {
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res, "認証に失敗しました"))
+  }
+  return (await res.json()) as AuthResponse
+}
+
+export async function signup(params: {
+  email: string
+  password: string
+  nickname?: string
+  home_area?: string
+  child_age_band_id?: string | null
+}): Promise<CurrentUser> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const res = await fetch(new URL("/api/auth/signup", base), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      email: params.email,
+      password: params.password,
+      nickname: params.nickname,
+      home_area: params.home_area,
+      child_age_band_id: params.child_age_band_id,
+    }),
+  })
+  const data = await handleAuthResponse(res)
+  setTokens(data.access_token, data.refresh_token)
+  return data.user
+}
+
+export async function login(params: { email: string; password: string }): Promise<CurrentUser> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const res = await fetch(new URL("/api/auth/login", base), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(params),
+  })
+  const data = await handleAuthResponse(res)
+  setTokens(data.access_token, data.refresh_token)
+  return data.user
+}
+
+export async function logout(): Promise<void> {
+  const refresh = getRefreshToken()
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  if (refresh) {
+    await fetch(new URL("/api/auth/logout", base), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    }).catch(() => undefined)
+  }
+  clearTokens()
+}
+
+export async function getMyProfile(): Promise<CurrentUser | null> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const res = await authFetch(new URL("/api/me", base).toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  })
+  if (res.status === 401) {
+    clearTokens()
+    return null
+  }
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res, "プロフィール取得に失敗しました"))
+  }
+  const data = (await res.json()) as { user: CurrentUser }
+  return data.user
+}
+
+export async function updateMyProfile(params: {
+  nickname?: string
+  home_area?: string
+  child_age_band_id?: string | null
+}): Promise<CurrentUser> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const res = await authFetch(new URL("/api/me", base).toString(), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(params),
+  })
+  if (res.status === 401) {
+    clearTokens()
+    throw new Error("ログインが必要です")
+  }
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res, "プロフィール更新に失敗しました"))
+  }
+  const data = (await res.json()) as { user: CurrentUser }
+  return data.user
 }
