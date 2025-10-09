@@ -153,3 +153,34 @@ class ReviewScore(models.Model):
 
     def __str__(self) -> str:
         return f"Score({self.review_id}, {self.axis_id})"
+
+
+class Photo(models.Model):
+    PURPOSE_REVIEW = "review_photo"
+    PURPOSE_PLACE = "place_photo"
+    PURPOSE_CHOICES = (
+        (PURPOSE_REVIEW, "Review Photo"),
+        (PURPOSE_PLACE, "Place Photo"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    place = models.ForeignKey(Place, on_delete=models.CASCADE, blank=True, null=True, db_column="place_id")
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, blank=True, null=True, db_column="review_id")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="photos")
+    purpose = models.CharField(max_length=32, choices=PURPOSE_CHOICES)
+    storage_path = models.TextField()
+    mime_type = models.CharField(max_length=64, blank=True, null=True)
+    width = models.IntegerField(blank=True, null=True)
+    height = models.IntegerField(blank=True, null=True)
+    file_size = models.BigIntegerField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "photos"
+        indexes = [
+            models.Index(fields=["place", "created_at"], name="idx_photos_place"),
+            models.Index(fields=["review", "created_at"], name="idx_photos_review"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Photo({self.id})"

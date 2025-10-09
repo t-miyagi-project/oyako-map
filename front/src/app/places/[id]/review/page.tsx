@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createReview, fetchAgeBandsMaster, type AgeBandMasterItem } from "@/lib/api";
+import { createReview, fetchAgeBandsMaster, uploadPhoto, type AgeBandMasterItem } from "@/lib/api";
 import { hasAuthToken } from "@/lib/auth";
 
 const STAR_VALUES = [1, 2, 3, 4, 5] as const;
@@ -121,6 +121,18 @@ export default function ReviewPostPage() {
       setSubmitMessage(null);
       try {
         const stayValue = stayMinutes.trim().length === 0 ? null : stayMinutesNumber || null;
+        const uploadedPhotoIds: string[] = [];
+        if (photos.length > 0) {
+          for (const file of photos) {
+            const uploaded = await uploadPhoto({
+              file,
+              purpose: "review_photo",
+              place_id: params.id,
+            });
+            uploadedPhotoIds.push(uploaded.id);
+          }
+        }
+
         await createReview({
           place_id: params.id,
           overall,
@@ -129,8 +141,13 @@ export default function ReviewPostPage() {
           revisit_intent: revisitIntent,
           text: body.trim(),
           axes: Object.entries(axisScores).map(([code, score]) => ({ code, score })),
+          photo_ids: uploadedPhotoIds,
         });
         setSubmitMessage("レビューを投稿しました。ご協力ありがとうございます。");
+        photos.forEach((_, index) => {
+          const preview = photoPreviews[index];
+          if (preview) URL.revokeObjectURL(preview);
+        });
         setPhotos([]);
         setPhotoPreviews([]);
         setTimeout(() => {
@@ -142,7 +159,7 @@ export default function ReviewPostPage() {
         setSubmitting(false);
       }
     },
-    [ageBand, axisScores, body, isReadyToSubmit, overall, params?.id, revisitIntent, router, stayMinutes, stayMinutesNumber]
+    [ageBand, axisScores, body, isReadyToSubmit, overall, params?.id, photoPreviews, photos, revisitIntent, router, stayMinutes, stayMinutesNumber]
   );
 
   const overallLabel = useMemo(() => {
@@ -284,7 +301,7 @@ export default function ReviewPostPage() {
 
         <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-neutral-900">写真（最大5枚）</h2>
-          <p className="text-xs text-neutral-500">現行バージョンでは写真は保存されません（将来実装予定）。</p>
+          <p className="text-xs text-neutral-500">JPG/PNG/WebP（5MBまで）をアップロードできます。選択した写真はレビュー送信時に保存されます。</p>
           <div className="mt-3 flex flex-wrap gap-3">
             {photoPreviews.map((src, index) => (
               <div key={`preview-${index}`} className="relative h-24 w-24 overflow-hidden rounded-lg border border-neutral-200">

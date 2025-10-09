@@ -56,6 +56,15 @@ export type CurrentUser = {
   child_age_band: ChildAgeBand | null
 }
 
+export type UploadedPhoto = {
+  id: string
+  storage_path: string
+  public_url: string
+  width: number | null
+  height: number | null
+  mime_type: string | null
+}
+
 type AuthResponse = {
   user: CurrentUser
   access_token: string
@@ -327,6 +336,7 @@ export async function createReview(params: {
   revisit_intent?: number | null
   text: string
   axes: { code: string; score: number }[]
+  photo_ids?: string[]
 }): Promise<{ review_id: string }> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
   const res = await authFetch(new URL("/api/reviews", base).toString(), {
@@ -342,4 +352,32 @@ export async function createReview(params: {
     throw new Error(await extractErrorMessage(res, "レビュー投稿に失敗しました"))
   }
   return (await res.json()) as { review_id: string }
+}
+
+export async function uploadPhoto(params: {
+  file: File
+  purpose: "review_photo" | "place_photo"
+  place_id?: string
+}): Promise<UploadedPhoto> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const form = new FormData()
+  form.append("purpose", params.purpose)
+  form.append("file", params.file)
+  if (params.place_id) {
+    form.append("place_id", params.place_id)
+  }
+
+  const res = await authFetch(new URL("/api/uploads", base).toString(), {
+    method: "POST",
+    body: form,
+  })
+  if (res.status === 401) {
+    clearTokens()
+    throw new Error("ログインが必要です")
+  }
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res, "画像のアップロードに失敗しました"))
+  }
+  const data = (await res.json()) as { photo: UploadedPhoto }
+  return data.photo
 }

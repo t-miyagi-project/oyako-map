@@ -1,5 +1,5 @@
 from django.contrib import admin
-from core.models import AgeBand, Category, Feature, UserProfile
+from core.models import AgeBand, Category, Feature, UserProfile, Photo
 
 
 @admin.register(AgeBand)
@@ -24,3 +24,10 @@ class FeatureAdmin(admin.ModelAdmin):
 class UserProfileAdmin(admin.ModelAdmin):
     list_display = ("user", "nickname", "home_area", "child_age_band")
     search_fields = ("user__email", "nickname", "home_area")
+
+
+@admin.register(Photo)
+class PhotoAdmin(admin.ModelAdmin):
+    list_display = ("id", "purpose", "uploaded_by", "place", "review", "created_at")
+    list_filter = ("purpose",)
+    search_fields = ("id", "uploaded_by__email")

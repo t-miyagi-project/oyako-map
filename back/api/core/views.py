@@ -390,11 +390,11 @@ class PlaceDetailView(APIView):
             "axes": {rating_axes_map.get(code, code): value for code, value in axes_data.items()},
         }
 
-        # 写真（最新順）。storage_path をそのままURLとして返す（MEDIA連携は将来拡張）
+        # 写真（最新順）
         photos = []
         try:
             sql_photos = """
-                SELECT storage_path, width, height, blurhash
+                SELECT id, storage_path, width, height, mime_type
                 FROM photos
                 WHERE place_id = %s
                 ORDER BY created_at DESC
@@ -403,15 +403,21 @@ class PlaceDetailView(APIView):
             with connection.cursor() as cur:
                 cur.execute(sql_photos, [str(place_id)])
                 photo_rows = cur.fetchall()
-            photos = [
-                {
-                    "url": path,
-                    "width": int(w) if w is not None else None,
-                    "height": int(h) if h is not None else None,
-                    "blurhash": bh,
-                }
-                for (path, w, h, bh) in photo_rows
-            ]
+            photos = []
+            for pid, path, w, h, mt in photo_rows:
+                try:
+                    absolute_url = request.build_absolute_uri(path)
+                except Exception:
+                    absolute_url = path
+                photos.append(
+                    {
+                        "id": str(pid),
+                        "url": absolute_url,
+                        "width": int(w) if w is not None else None,
+                        "height": int(h) if h is not None else None,
+                        "mime_type": mt,
+                    }
+                )
         except Exception:
             photos = []
 

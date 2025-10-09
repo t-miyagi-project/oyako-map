@@ -56,4 +56,4 @@ pg_data/
 docker-data/
 *.pid
 
-back/media/
+back/api/media/

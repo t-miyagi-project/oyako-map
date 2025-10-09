@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.exceptions import error_response
-from core.models import Place, Review, ReviewAxis, ReviewScore
+from core.models import Place, Review, ReviewAxis, ReviewScore, Photo
 from core.serializers import ReviewCreateSerializer
 
 
@@ -12,15 +12,24 @@ def refresh_place_stats(place_id: str):
     sql = """
         INSERT INTO place_stats (place_id, avg_overall, review_count, photo_count, last_reviewed_at)
         SELECT
-            r.place_id,
-            AVG(r.overall)::numeric(3,2) AS avg_overall,
-            COUNT(*) AS review_count,
-            COALESCE(ps.photo_count, 0) AS photo_count,
-            MAX(r.created_at) AS last_reviewed_at
-        FROM reviews r
-        LEFT JOIN place_stats ps ON ps.place_id = r.place_id
-        WHERE r.place_id = %s AND r.status = 'public'
-        GROUP BY r.place_id, ps.photo_count
+            %(place_id)s,
+            stats.avg_overall,
+            stats.review_count,
+            stats.photo_count,
+            stats.last_reviewed_at
+        FROM (
+            SELECT
+                AVG(r.overall)::numeric(3,2) AS avg_overall,
+                COUNT(*) AS review_count,
+                COALESCE(MAX(r.created_at), NOW()) AS last_reviewed_at,
+                (
+                    SELECT COUNT(*)
+                    FROM photos p
+                    WHERE (p.place_id = %(place_id)s OR p.review_id IN (SELECT id FROM reviews WHERE place_id = %(place_id)s))
+                ) AS photo_count
+            FROM reviews r
+            WHERE r.place_id = %(place_id)s AND r.status = 'public'
+        ) AS stats
         ON CONFLICT (place_id) DO UPDATE
         SET avg_overall = EXCLUDED.avg_overall,
             review_count = EXCLUDED.review_count,
@@ -28,7 +37,7 @@ def refresh_place_stats(place_id: str):
             last_reviewed_at = EXCLUDED.last_reviewed_at
     """
     with connection.cursor() as cur:
-        cur.execute(sql, [str(place_id)])
+        cur.execute(sql, {"place_id": str(place_id)})
 
 
 class ReviewCreateView(APIView):
@@ -67,6 +76,24 @@ class ReviewCreateView(APIView):
             )
 
         with transaction.atomic():
+            photo_ids = data.get("photo_ids") or []
+            photos = []
+            if photo_ids:
+                unique_ids = list({pid for pid in photo_ids})
+                photos = list(
+                    Photo.objects.select_for_update().filter(
+                        id__in=unique_ids,
+                        uploaded_by=request.user,
+                        review__isnull=True,
+                        purpose=Photo.PURPOSE_REVIEW,
+                    )
+                )
+                if len(photos) != len(unique_ids):
+                    return error_response(
+                        code="VALIDATION_ERROR",
+                        message="指定された写真が存在しないか、権限がありません",
+                        details={"photo_ids": [str(pid) for pid in unique_ids]},
+                    )
             review = Review.objects.create(
                 place=place,
                 user=request.user,
@@ -83,6 +110,11 @@ class ReviewCreateView(APIView):
                     for item in axes_payload
                 ]
             )
+            if photos:
+                for photo in photos:
+                    photo.review = review
+                    photo.place = place
+                Photo.objects.bulk_update(photos, ["review", "place"])
             refresh_place_stats(place_id)
 
         return Response({"review_id": str(review.id)}, status=201)

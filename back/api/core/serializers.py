@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from core.models import AgeBand, UserProfile, ReviewAxis
+from core.models import AgeBand, UserProfile, ReviewAxis, Photo
 
 
 User = get_user_model()
@@ -95,6 +95,9 @@ class ReviewCreateSerializer(serializers.Serializer):
     revisit_intent = serializers.IntegerField(min_value=1, max_value=5, required=False, allow_null=True)
     text = serializers.CharField(max_length=2000)
     axes = ReviewAxisScoreSerializer(many=True)
+    photo_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True
+    )
 
     def validate_axes(self, value):
         if not value:
@@ -107,3 +110,23 @@ class ReviewCreateSerializer(serializers.Serializer):
         if unknown:
             raise serializers.ValidationError({"code": f"Unknown axis code: {', '.join(unknown)}"})
         return value
+
+    def validate_photo_ids(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("photo_ids に重複があります")
+        return value
+
+
+class UploadPhotoSerializer(serializers.Serializer):
+    PURPOSE_CHOICES = [choice[0] for choice in Photo.PURPOSE_CHOICES]
+
+    purpose = serializers.ChoiceField(choices=Photo.PURPOSE_CHOICES)
+    file = serializers.ImageField()
+    place_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        purpose = attrs.get("purpose")
+        place_id = attrs.get("place_id")
+        if purpose == Photo.PURPOSE_REVIEW and not place_id:
+            raise serializers.ValidationError({"place_id": "レビュー写真には place_id が必要です"})
+        return attrs
