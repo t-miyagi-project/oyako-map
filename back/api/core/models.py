@@ -103,3 +103,53 @@ class UserProfile(models.Model):
 
     def __str__(self) -> str:
         return f"Profile({self.user_id})"
+
+
+class ReviewAxis(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    code = models.CharField(max_length=100, unique=True)
+    label = models.CharField(max_length=100)
+    sort = models.IntegerField(default=100)
+
+    class Meta:
+        db_table = "review_axes"
+
+    def __str__(self) -> str:
+        return f"{self.label}({self.code})"
+
+
+class Review(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    place = models.ForeignKey(Place, on_delete=models.CASCADE, db_column="place_id")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column="user_id")
+    overall = models.PositiveSmallIntegerField()
+    age_band = models.ForeignKey(AgeBand, on_delete=models.SET_NULL, blank=True, null=True, db_column="age_band_id")
+    stay_minutes = models.PositiveIntegerField(blank=True, null=True)
+    revisit_intent = models.PositiveSmallIntegerField(blank=True, null=True)
+    text = models.TextField()
+    status = models.CharField(max_length=16, default="public")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "reviews"
+        indexes = [
+            models.Index(fields=["place", "created_at"], name="idx_reviews_place_created"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Review({self.id})"
+
+
+class ReviewScore(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, db_column="review_id", related_name="scores")
+    axis = models.ForeignKey(ReviewAxis, on_delete=models.CASCADE, db_column="axis_id")
+    score = models.PositiveSmallIntegerField()
+
+    class Meta:
+        db_table = "review_scores"
+        unique_together = ("review", "axis")
+
+    def __str__(self) -> str:
+        return f"Score({self.review_id}, {self.axis_id})"

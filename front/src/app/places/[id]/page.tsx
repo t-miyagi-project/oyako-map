@@ -348,7 +348,7 @@ export default function PlaceDetailPage() {
                     key={axis}
                     className="flex items-center justify-between rounded-md border border-neutral-200 px-3 py-2"
                   >
-                    <span className="text-neutral-600">{axis.replace(/_/g, " ")}</span>
+                    <span className="text-neutral-600">{axis}</span>
                     <span className="font-medium text-neutral-800">{score.toFixed(1)}</span>
                   </div>
                 ))}

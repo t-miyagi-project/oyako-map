@@ -7,6 +7,7 @@ from core.auth_views import (
     LogoutView,
     MeView,
 )
+from core.review_views import ReviewCreateView
 from core.views import (
     PingView,
     PlacesSearchView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path('api/auth/refresh', RefreshView.as_view(), name='auth-refresh'),
     path('api/auth/logout', LogoutView.as_view(), name='auth-logout'),
     path('api/me', MeView.as_view(), name='me'),
+    path('api/reviews', ReviewCreateView.as_view(), name='reviews-create'),
     # 施設検索（距離順・半径フィルタ・limit・cursor）
     path('api/places', PlacesSearchView.as_view(), name='places-search'),
     # 施設詳細

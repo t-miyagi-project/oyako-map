@@ -344,10 +344,50 @@ class PlaceDetailView(APIView):
 
         # 4) rating/photos/sourceメタ
         # rating は place_stats の集計値を返す（無い場合は null/0）
+        axes_sql = """
+            SELECT ra.code, AVG(rs.score)::numeric(3,2)
+            FROM review_scores rs
+            JOIN review_axes ra ON ra.id = rs.axis_id
+            JOIN reviews r ON r.id = rs.review_id
+            WHERE r.place_id = %s AND r.status = 'public'
+            GROUP BY ra.code
+        """
+        axes_data = {}
+        with connection.cursor() as cur:
+            try:
+                cur.execute(axes_sql, [str(place_id)])
+                axes_rows = cur.fetchall()
+                axes_data = {code: float(avg) for code, avg in axes_rows}
+            except Exception:
+                axes_data = {}
+
+        if avg_overall is None:
+            summary_sql = """
+                SELECT AVG(overall)::numeric(3,2), COUNT(*)
+                FROM reviews
+                WHERE place_id = %s AND status = 'public'
+            """
+            with connection.cursor() as cur:
+                try:
+                    cur.execute(summary_sql, [str(place_id)])
+                    summary_row = cur.fetchone()
+                    if summary_row:
+                        avg_overall, review_count = summary_row
+                except Exception:
+                    avg_overall = None
+                    review_count = 0
+
+        rating_axes_map = {
+            "cleanliness": "清潔さ",
+            "safety": "安全",
+            "noise": "騒音",
+            "staff": "スタッフ対応",
+            "crowd": "混雑",
+        }
         rating = {
             "overall": float(avg_overall) if avg_overall is not None else None,
             "count": int(review_count or 0),
-            "axes": {},  # 軸別平均は将来拡張
+            "axes": {rating_axes_map.get(code, code): value for code, value in axes_data.items()},
         }
 
         # 写真（最新順）。storage_path をそのままURLとして返す（MEDIA連携は将来拡張）

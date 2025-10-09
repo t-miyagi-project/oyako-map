@@ -318,3 +318,28 @@ export async function updateMyProfile(params: {
   const data = (await res.json()) as { user: CurrentUser }
   return data.user
 }
+
+export async function createReview(params: {
+  place_id: string
+  overall: number
+  age_band_id?: string | null
+  stay_minutes?: number | null
+  revisit_intent?: number | null
+  text: string
+  axes: { code: string; score: number }[]
+}): Promise<{ review_id: string }> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const res = await authFetch(new URL("/api/reviews", base).toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(params),
+  })
+  if (res.status === 401) {
+    clearTokens()
+    throw new Error("ログインが必要です")
+  }
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res, "レビュー投稿に失敗しました"))
+  }
+  return (await res.json()) as { review_id: string }
+}

@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from core.models import AgeBand, UserProfile
+from core.models import AgeBand, UserProfile, ReviewAxis
 
 
 User = get_user_model()
@@ -78,3 +78,32 @@ class ProfileUpdateSerializer(serializers.Serializer):
         allow_null=True,
         write_only=True,
     )
+
+
+class ReviewAxisScoreSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=100)
+    score = serializers.IntegerField(min_value=1, max_value=5)
+
+
+class ReviewCreateSerializer(serializers.Serializer):
+    place_id = serializers.UUIDField()
+    overall = serializers.IntegerField(min_value=1, max_value=5)
+    age_band_id = serializers.PrimaryKeyRelatedField(
+        queryset=AgeBand.objects.all(), required=False, allow_null=True
+    )
+    stay_minutes = serializers.IntegerField(min_value=0, max_value=600, required=False, allow_null=True)
+    revisit_intent = serializers.IntegerField(min_value=1, max_value=5, required=False, allow_null=True)
+    text = serializers.CharField(max_length=2000)
+    axes = ReviewAxisScoreSerializer(many=True)
+
+    def validate_axes(self, value):
+        if not value:
+            raise serializers.ValidationError("少なくとも1つの評価軸スコアを指定してください")
+        codes = [item["code"] for item in value]
+        if len(set(codes)) != len(codes):
+            raise serializers.ValidationError("評価軸コードが重複しています")
+        axis_codes = set(ReviewAxis.objects.values_list("code", flat=True))
+        unknown = [code for code in codes if code not in axis_codes]
+        if unknown:
+            raise serializers.ValidationError({"code": f"Unknown axis code: {', '.join(unknown)}"})
+        return value

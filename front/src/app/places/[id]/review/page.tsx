@@ -5,7 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchAgeBandsMaster, type AgeBandMasterItem } from "@/lib/api";
+import { createReview, fetchAgeBandsMaster, type AgeBandMasterItem } from "@/lib/api";
+import { hasAuthToken } from "@/lib/auth";
 
 const STAR_VALUES = [1, 2, 3, 4, 5] as const;
 const MAX_PHOTOS = 5;
@@ -22,6 +23,7 @@ type AxisScoreMap = Record<string, number>;
 export default function ReviewPostPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const isLoggedIn = hasAuthToken();
   const [ageBands, setAgeBands] = useState<AgeBandMasterItem[]>([]);
   const [ageBandError, setAgeBandError] = useState<string | null>(null);
   const [loadingAgeBands, setLoadingAgeBands] = useState(false);
@@ -40,11 +42,20 @@ export default function ReviewPostPage() {
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const minOverallSelected = overall > 0;
   const stayMinutesNumber = Number(stayMinutes);
   const isStayMinutesValid =
     stayMinutes.trim().length === 0 || (!Number.isNaN(stayMinutesNumber) && stayMinutesNumber >= 0 && stayMinutesNumber <= 600);
-  const isReadyToSubmit = minOverallSelected && body.trim().length > 0 && isStayMinutesValid && !submitting;
+  const isReadyToSubmit = isLoggedIn && minOverallSelected && body.trim().length > 0 && isStayMinutesValid && !submitting;
+
+  useEffect(() => {
+    if (!params?.id) return;
+    if (!isLoggedIn) {
+      router.replace(`/login?redirect=/places/${params.id}/review`);
+    }
+  }, [isLoggedIn, params?.id, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,25 +112,37 @@ export default function ReviewPostPage() {
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (!isReadyToSubmit) return;
+      if (!params?.id) {
+        setSubmitError("施設IDが不明です。ページを再読み込みしてください。");
+        return;
+      }
       setSubmitting(true);
+      setSubmitError(null);
+      setSubmitMessage(null);
       try {
-        console.log("submit review", {
-          placeId: params?.id,
+        const stayValue = stayMinutes.trim().length === 0 ? null : stayMinutesNumber || null;
+        await createReview({
+          place_id: params.id,
           overall,
-          ageBand,
-          stayMinutes: stayMinutesNumber || null,
-          revisitIntent,
-          body,
-          axisScores,
-          photos,
+          age_band_id: ageBand || null,
+          stay_minutes: stayValue,
+          revisit_intent: revisitIntent,
+          text: body.trim(),
+          axes: Object.entries(axisScores).map(([code, score]) => ({ code, score })),
         });
-        alert("レビュー投稿のモックが完了しました。実装時はAPI連携してください。");
-        router.back();
+        setSubmitMessage("レビューを投稿しました。ご協力ありがとうございます。");
+        setPhotos([]);
+        setPhotoPreviews([]);
+        setTimeout(() => {
+          router.replace(`/places/${params.id}`);
+        }, 1500);
+      } catch (error: any) {
+        setSubmitError(error?.message ?? "レビュー投稿に失敗しました。");
       } finally {
         setSubmitting(false);
       }
     },
-    [ageBand, axisScores, body, isReadyToSubmit, overall, params?.id, photos, revisitIntent, router, stayMinutesNumber]
+    [ageBand, axisScores, body, isReadyToSubmit, overall, params?.id, revisitIntent, router, stayMinutes, stayMinutesNumber]
   );
 
   const overallLabel = useMemo(() => {
@@ -261,7 +284,7 @@ export default function ReviewPostPage() {
 
         <section className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-neutral-900">写真（最大5枚）</h2>
-          <p className="text-xs text-neutral-500">端末に保存している写真をアップロードできます。横向きの写真が見やすくおすすめです。</p>
+          <p className="text-xs text-neutral-500">現行バージョンでは写真は保存されません（将来実装予定）。</p>
           <div className="mt-3 flex flex-wrap gap-3">
             {photoPreviews.map((src, index) => (
               <div key={`preview-${index}`} className="relative h-24 w-24 overflow-hidden rounded-lg border border-neutral-200">
@@ -292,9 +315,11 @@ export default function ReviewPostPage() {
         </section>
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <p className="text-xs text-neutral-500">
-            投稿前に内容をご確認ください。送信後は管理者による確認のうえ公開されます。
-          </p>
+          <div className="flex-1 space-y-1 text-xs text-neutral-500">
+            <p>投稿前に内容をご確認ください。送信後は管理者による確認のうえ公開されます。</p>
+            {submitMessage && <p className="text-green-600">{submitMessage}</p>}
+            {submitError && <p className="text-red-600">{submitError}</p>}
+          </div>
           <Button type="submit" disabled={!isReadyToSubmit} className="md:min-w-[220px]">
             {submitting ? "送信中..." : "レビューを投稿する"}
           </Button>
