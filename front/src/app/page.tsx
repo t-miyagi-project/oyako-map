@@ -9,13 +9,17 @@ import {
   fetchPlaces,
   fetchFeaturesMaster,
   fetchCategoriesMaster,
+  getMyProfile,
+  logout,
   type PlaceListItem,
   type FeatureMasterItem,
   type CategoryMasterItem,
+  type CurrentUser,
 } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import MapView from "@/components/MapView";
 import Link from "next/link";
+import { hasAuthToken, clearTokens } from "@/lib/auth";
 
 // 並び替えキーの型（UI内部）。APIは score/reviews を使用するためマッピングを行う。
 type SortKey = "distance" | "overall" | "count" | "new";
@@ -94,6 +98,9 @@ export default function Page() {
   const [categoryOptions, setCategoryOptions] = useState<CategoryMasterItem[]>([]);
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  // 認証状態
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // 検索トリガ（ボタン押下でインクリメントし、useEffect依存に含める）
   const [searchVersion, setSearchVersion] = useState(0);
@@ -120,6 +127,37 @@ export default function Page() {
         if (cancelled) return;
         setCategoryLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 認証情報を取得
+  useEffect(() => {
+    let cancelled = false;
+    const loadProfile = async () => {
+      if (!hasAuthToken()) {
+        setAuthLoading(false);
+        setCurrentUser(null);
+        return;
+      }
+      try {
+        const profile = await getMyProfile();
+        if (!cancelled) {
+          setCurrentUser(profile);
+        }
+      } catch (error) {
+        clearTokens();
+        if (!cancelled) {
+          setCurrentUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setAuthLoading(false);
+        }
+      }
+    };
+    void loadProfile();
     return () => {
       cancelled = true;
     };
@@ -399,14 +437,56 @@ export default function Page() {
     );
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      clearTokens();
+    } finally {
+      setCurrentUser(null);
+      router.push("/");
+    }
+  };
+
   return (
     <main className="min-h-[100dvh]">
       {/* ヘッダー（検索バー + クイックフィルタ） */}
       <header ref={headerRef} className="sticky top-0 z-10 border-b bg-[color:var(--background)]/80 backdrop-blur">
         <div className="mx-auto w-full max-w-7xl px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold">Oyako Map</div>
-            <div className="hidden text-xs text-neutral-500 sm:block">子連れ向けスポット検索</div>
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="font-semibold text-left"
+            >
+              Oyako Map
+            </button>
+            <div className="flex items-center gap-2 text-xs">
+              {authLoading ? (
+                <span className="text-neutral-400">確認中...</span>
+              ) : currentUser ? (
+                <>
+                  <span className="hidden text-neutral-500 sm:block">
+                    こんにちは、{currentUser.nickname ?? currentUser.email}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => router.push("/profile")}>
+                    マイページ
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleLogout}>
+                    ログアウト
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => router.push("/login")}>
+                    ログイン
+                  </Button>
+                  <Button size="sm" onClick={() => router.push("/signup")}>
+                    新規登録
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
           <div className="mt-3 flex gap-2">
             <Input
