@@ -135,16 +135,9 @@ export async function fetchPlaces(
   u.searchParams.set("sort", params.sort ?? "distance")
 
   // API呼び出し
-  const headers: Record<string, string> = {
-    "Accept": "application/json",
-  }
-  const access = getAccessToken()
-  if (access) {
-    headers["Authorization"] = `Bearer ${access}`
-  }
-  const res = await fetch(u.toString(), {
+  const res = await authFetch(u.toString(), {
     method: "GET",
-    headers,
+    headers: { Accept: "application/json" },
     signal: options?.signal,
   })
 
@@ -189,7 +182,10 @@ export type PlaceDetail = {
 export async function fetchPlaceDetail(placeId: string): Promise<PlaceDetail> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
   const u = new URL(`/api/places/${encodeURIComponent(placeId)}`, base)
-  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  const res = await authFetch(u.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  })
   if (!res.ok) {
     let message = `HTTP ${res.status}`
     try {
@@ -205,7 +201,7 @@ export async function fetchPlaceDetail(placeId: string): Promise<PlaceDetail> {
 export async function fetchFeaturesMaster(): Promise<{ items: FeatureMasterItem[] }> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
   const u = new URL("/api/features", base)
-  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  const res = await authFetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
   if (!res.ok) {
     let message = `HTTP ${res.status}`
     try {
@@ -221,7 +217,7 @@ export async function fetchFeaturesMaster(): Promise<{ items: FeatureMasterItem[
 export async function fetchCategoriesMaster(): Promise<{ items: CategoryMasterItem[] }> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
   const u = new URL("/api/categories", base)
-  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  const res = await authFetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
   if (!res.ok) {
     let message = `HTTP ${res.status}`
     try {
@@ -237,7 +233,7 @@ export async function fetchCategoriesMaster(): Promise<{ items: CategoryMasterIt
 export async function fetchAgeBandsMaster(): Promise<{ items: AgeBandMasterItem[] }> {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
   const u = new URL("/api/age-bands", base)
-  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  const res = await authFetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
   if (!res.ok) {
     let message = `HTTP ${res.status}`
     try {
