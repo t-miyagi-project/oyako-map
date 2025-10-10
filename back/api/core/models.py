@@ -164,9 +164,9 @@ class Photo(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
-    place = models.ForeignKey(Place, on_delete=models.CASCADE, blank=True, null=True, db_column="place_id")
-    review = models.ForeignKey(Review, on_delete=models.CASCADE, blank=True, null=True, db_column="review_id")
-    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="photos")
+    place = models.ForeignKey(Place, on_delete=models.CASCADE, blank=True, null=True, db_column="place_id", related_name="photos")
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, blank=True, null=True, db_column="review_id", related_name="photos")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="uploaded_photos")
     purpose = models.CharField(max_length=32, choices=PURPOSE_CHOICES)
     storage_path = models.TextField()
     mime_type = models.CharField(max_length=64, blank=True, null=True)

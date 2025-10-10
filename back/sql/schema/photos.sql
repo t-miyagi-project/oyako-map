@@ -14,5 +14,5 @@ CREATE TABLE public.photos (
   created_at timestamptz NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX photos_place_created_idx ON public.photos (place_id, created_at DESC);
-CREATE INDEX photos_review_created_idx ON public.photos (review_id, created_at DESC);
+CREATE INDEX idx_photos_place ON public.photos (place_id, created_at DESC);
+CREATE INDEX idx_photos_review ON public.photos (review_id, created_at DESC);

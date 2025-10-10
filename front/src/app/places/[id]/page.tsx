@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { fetchPlaceDetail, type PlaceDetail } from "@/lib/api";
+import { fetchPlaceDetail, fetchPlaceReviews, type PlaceDetail, type PlaceReview } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -57,6 +57,14 @@ function formatTodayHours(opening: PlaceDetail["opening_hours"]): string | null 
   return `本日(${label}) ${text}`;
 }
 
+function formatReviewDate(value: string) {
+  try {
+    return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 // 施設詳細ページ
 // - ルート: /places/[id]
 // - 初回に API から詳細を取得し、名称/カテゴリ/住所/サービス/評価/写真/取得元メタを表示する
@@ -67,6 +75,9 @@ export default function PlaceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [reviews, setReviews] = useState<PlaceReview[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(true);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   // 表示用に事前計算した配列やURL（dataがnullの間は空として扱う）
   const openingRows = data ? formatOpeningHours(data.opening_hours) : [];
   const todayHours = data ? formatTodayHours(data.opening_hours) : null;
@@ -93,6 +104,46 @@ export default function PlaceDetailPage() {
     ? `https://www.google.com/maps/place/?q=place_id:${data.google.place_id}`
     : null;
 
+  const renderReviewCard = (review: PlaceReview) => {
+    const axisEntries = Object.entries(review.axes);
+    return (
+      <div key={review.id} className="rounded-lg border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-semibold text-neutral-900">{review.user.nickname}</div>
+            <div className="text-xs text-neutral-500">
+              {formatReviewDate(review.created_at)}
+              {review.age_band ? ` ｜ 利用年齢：${review.age_band}` : ""}
+            </div>
+          </div>
+          <div className="text-sm font-semibold text-neutral-900">★{review.overall.toFixed(1)}</div>
+        </div>
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">{review.text}</p>
+        {axisEntries.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-neutral-600">
+            {axisEntries.map(([label, score]) => (
+              <span key={label} className="rounded-full bg-neutral-100 px-2 py-1">
+                {label}：{score.toFixed(1)}
+              </span>
+            ))}
+          </div>
+        )}
+        {review.photos.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {review.photos.map((p) => (
+              <img
+                key={p.id}
+                src={p.url}
+                alt={`${review.user.nickname} の写真`}
+                className="h-20 w-28 rounded-md object-cover"
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   useEffect(() => {
     // 詳細データを読み込む
     const id = params?.id;
@@ -103,6 +154,19 @@ export default function PlaceDetailPage() {
       .then((res) => setData(res))
       .catch((e: any) => setError(e?.message ?? "読み込みに失敗しました"))
       .finally(() => setLoading(false));
+  }, [params?.id]);
+
+  useEffect(() => {
+    const id = params?.id;
+    if (!id) return;
+    setReviewLoading(true);
+    setReviewError(null);
+    fetchPlaceReviews({ placeId: id, limit: 3, sort: "new" })
+      .then((res) => {
+        setReviews(res.items);
+      })
+      .catch((e: any) => setReviewError(e?.message ?? "レビューの取得に失敗しました"))
+      .finally(() => setReviewLoading(false));
   }, [params?.id]);
 
   return (
@@ -341,7 +405,7 @@ export default function PlaceDetailPage() {
                 <Link href={`/places/${params?.id}/review`}>レビューを投稿する</Link>
               </Button>
             </div>
-            {ratingAxesEntries.length > 0 ? (
+            {ratingAxesEntries.length > 0 && (
               <dl className="mt-4 grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
                 {ratingAxesEntries.map(([axis, score]) => (
                   <div
@@ -353,11 +417,26 @@ export default function PlaceDetailPage() {
                   </div>
                 ))}
               </dl>
-            ) : (
+            )}
+            {reviewLoading && <div className="mt-4 text-sm text-neutral-500">レビューを読み込んでいます...</div>}
+            {reviewError && !reviewLoading && (
+              <div className="mt-4 text-sm text-red-600">{reviewError}</div>
+            )}
+            {!reviewLoading && !reviewError && reviews.length > 0 && (
+              <div className="mt-4 space-y-4">
+                {reviews.map((review) => renderReviewCard(review))}
+              </div>
+            )}
+            {!reviewLoading && !reviewError && reviews.length === 0 && (
               <div className="mt-4 text-sm text-neutral-500">
                 レビューはまだ登録されていません。公開準備中です。
               </div>
             )}
+            <div className="mt-4 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => router.push(`/places/${params?.id}/reviews`)}>
+                すべてのレビューを見る
+              </Button>
+            </div>
           </section>
         </div>
       )}

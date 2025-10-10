@@ -21,9 +21,9 @@ class Migration(migrations.Migration):
                 ("height", models.IntegerField(blank=True, null=True)),
                 ("file_size", models.BigIntegerField(blank=True, null=True)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
-                ("place", models.ForeignKey(blank=True, db_column="place_id", null=True, on_delete=models.deletion.CASCADE, to="core.place")),
-                ("review", models.ForeignKey(blank=True, db_column="review_id", null=True, on_delete=models.deletion.CASCADE, to="core.review")),
-                ("uploaded_by", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="photos", to=settings.AUTH_USER_MODEL)),
+                ("place", models.ForeignKey(blank=True, db_column="place_id", null=True, on_delete=models.deletion.CASCADE, related_name="photos", to="core.place")),
+                ("review", models.ForeignKey(blank=True, db_column="review_id", null=True, on_delete=models.deletion.CASCADE, related_name="photos", to="core.review")),
+                ("uploaded_by", models.ForeignKey(on_delete=models.deletion.CASCADE, related_name="uploaded_photos", to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 "db_table": "photos",

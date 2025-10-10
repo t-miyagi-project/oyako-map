@@ -65,6 +65,29 @@ export type UploadedPhoto = {
   mime_type: string | null
 }
 
+export type PlaceReview = {
+  id: string
+  overall: number
+  text: string
+  stay_minutes: number | null
+  revisit_intent: number | null
+  created_at: string
+  age_band: string | null
+  axes: Record<string, number>
+  user: {
+    id: string
+    nickname: string
+    child_age_band: string | null
+  }
+  photos: {
+    id: string
+    url: string
+    width: number | null
+    height: number | null
+    mime_type: string | null
+  }[]
+}
+
 type AuthResponse = {
   user: CurrentUser
   access_token: string
@@ -380,4 +403,25 @@ export async function uploadPhoto(params: {
   }
   const data = (await res.json()) as { photo: UploadedPhoto }
   return data.photo
+}
+
+export async function fetchPlaceReviews(params: {
+  placeId: string
+  limit?: number
+  cursor?: string | null
+  sort?: "new" | "rating"
+  has_photo?: boolean
+}): Promise<{ items: PlaceReview[]; next_cursor: string | null }> {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL || ""
+  const u = new URL(`/api/places/${params.placeId}/reviews`, base)
+  if (params.limit) u.searchParams.set("limit", String(params.limit))
+  if (params.cursor) u.searchParams.set("cursor", params.cursor)
+  if (params.sort) u.searchParams.set("sort", params.sort)
+  if (params.has_photo) u.searchParams.set("has_photo", "1")
+
+  const res = await fetch(u.toString(), { method: "GET", headers: { Accept: "application/json" } })
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res, "レビューの取得に失敗しました"))
+  }
+  return (await res.json()) as { items: PlaceReview[]; next_cursor: string | null }
 }
