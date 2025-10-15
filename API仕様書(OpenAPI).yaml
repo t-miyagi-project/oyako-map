@@ -1,0 +1,210 @@
+openapi: 3.0.3
+info:
+  title: Oyako Map API
+  version: 0.2.0
+  description: 子連れ向けスポット検索アプリのREST API（MVP版）。
+paths:
+  /api/age-bands:
+    get:
+      operationId: age_bands_retrieve
+      description: |-
+        年齢帯一覧。
+        返却: { items: [{ code, label, sort }] }
+      tags:
+      - age-bands
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/auth/login:
+    post:
+      operationId: auth_login_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/auth/logout:
+    post:
+      operationId: auth_logout_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/auth/refresh:
+    post:
+      operationId: auth_refresh_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/auth/signup:
+    post:
+      operationId: auth_signup_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/categories:
+    get:
+      operationId: categories_retrieve
+      description: |-
+        カテゴリ一覧。
+        返却: { items: [{ code, label, sort }] }
+      tags:
+      - categories
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/features:
+    get:
+      operationId: features_retrieve
+      description: |-
+        設備・サービス一覧。
+        返却: { items: [{ code, label, category, description }] }
+      tags:
+      - features
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/me:
+    get:
+      operationId: me_retrieve
+      tags:
+      - me
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: me_partial_update
+      tags:
+      - me
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/ping/:
+    get:
+      operationId: ping_retrieve
+      tags:
+      - ping
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/places:
+    get:
+      operationId: places_retrieve
+      description: |-
+        施設検索。
+        必須: lat, lng
+        任意: radius_m(既定3000, 最大30000), limit(既定20, 最大50), cursor(base64), q, category, sort
+        並び替え(sort): distance | score | reviews | new
+        仕様: 半径内で PostGIS KNN を使いつつ、指定の sort に応じて ORDER BY を切り替え、`{ items, next_cursor }` を返す。
+      tags:
+      - places
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/places/{place_id}:
+    get:
+      operationId: places_retrieve_2
+      description: |-
+        施設詳細を返す。
+        入力: path param {id}
+        返却: API設計に準拠した施設詳細（features/rating/photos/sourceメタを含む）。
+        - 現状のDBにはレビュー/写真集計が無いため、rating と photos はプレースホルダ（overall=null, count=0, photos=[]）
+        - 取得元メタは places.google_place_id / data_source を返す
+      parameters:
+      - in: path
+        name: place_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - places
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/places/{place_id}/reviews:
+    get:
+      operationId: places_reviews_retrieve
+      parameters:
+      - in: path
+        name: place_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - places
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/reviews:
+    post:
+      operationId: reviews_create
+      tags:
+      - reviews
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/uploads:
+    post:
+      operationId: uploads_create
+      tags:
+      - uploads
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+components:
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+servers:
+- url: http://localhost:8000
+  description: Local dev
