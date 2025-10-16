@@ -2,209 +2,1471 @@ openapi: 3.0.3
 info:
   title: Oyako Map API
   version: 0.2.0
-  description: 子連れ向けスポット検索アプリのREST API（MVP版）。
+  description: >
+    子連れ向けスポット検索アプリ「親子マップ」の REST API 仕様。
+    認証・施設検索・レビュー投稿・写真アップロードを対象に、リクエストとレスポンスの詳細を定義する。
+servers:
+  - url: http://localhost:8000
+    description: ローカル開発環境
+tags:
+  - name: Ping
+    description: APIが稼働しているかを確認する操作。
+  - name: Auth
+    description: サインアップやトークン発行など認証関連の操作。
+  - name: Account
+    description: ログイン済みユーザーのプロフィール取得・更新。
+  - name: Master
+    description: カテゴリや設備などの参照マスタを取得する操作。
+  - name: Places
+    description: 施設検索と施設詳細の取得。
+  - name: Reviews
+    description: レビューの投稿および取得。
+  - name: Uploads
+    description: 写真アップロードに関する操作。
 paths:
-  /api/age-bands:
-    get:
-      operationId: age_bands_retrieve
-      description: |-
-        年齢帯一覧。
-        返却: { items: [{ code, label, sort }] }
-      tags:
-      - age-bands
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/auth/login:
-    post:
-      operationId: auth_login_create
-      tags:
-      - auth
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/auth/logout:
-    post:
-      operationId: auth_logout_create
-      tags:
-      - auth
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/auth/refresh:
-    post:
-      operationId: auth_refresh_create
-      tags:
-      - auth
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/auth/signup:
-    post:
-      operationId: auth_signup_create
-      tags:
-      - auth
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/categories:
-    get:
-      operationId: categories_retrieve
-      description: |-
-        カテゴリ一覧。
-        返却: { items: [{ code, label, sort }] }
-      tags:
-      - categories
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/features:
-    get:
-      operationId: features_retrieve
-      description: |-
-        設備・サービス一覧。
-        返却: { items: [{ code, label, category, description }] }
-      tags:
-      - features
-      security:
-      - jwtAuth: []
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/me:
-    get:
-      operationId: me_retrieve
-      tags:
-      - me
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          description: No response body
-    patch:
-      operationId: me_partial_update
-      tags:
-      - me
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          description: No response body
+  # 参照: API設計.md 0.1
   /api/ping/:
     get:
-      operationId: ping_retrieve
       tags:
-      - ping
-      security:
-      - jwtAuth: []
-      - {}
+        - Ping
+      summary: API疎通確認
+      description: >
+        APIが稼働しているかを確認するための簡易エンドポイント。
+      security: []
       responses:
         '200':
-          description: No response body
+          description: 正常に疎通しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+              examples:
+                標準:
+                  value:
+                    pong: true
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 1.1
+  /api/auth/signup:
+    post:
+      tags:
+        - Auth
+      summary: サインアップ
+      description: >
+        メールアドレスとパスワードを指定して新規アカウントを作成し、認証トークンを発行する。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+            examples:
+              signup例:
+                value:
+                  email: parent@example.com
+                  password: "Password123!"
+                  nickname: みやぎ
+                  home_area: 仙台市青葉区
+                  child_age_band_id: 2c14f9aa-4c2e-4ff2-9df4-0bc8a5c6c510
+      responses:
+        '201':
+          description: アカウントを作成しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 1.2
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: ログイン
+      description: >
+        登録済みのメールアドレスとパスワードでログインし、アクセストークンとリフレッシュトークンを取得する。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              login例:
+                value:
+                  email: parent@example.com
+                  password: "Password123!"
+      responses:
+        '200':
+          description: ログインに成功しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 1.3
+  /api/auth/refresh:
+    post:
+      tags:
+        - Auth
+      summary: トークン更新
+      description: >
+        リフレッシュトークンを送信して、新しいアクセストークン（必要に応じてリフレッシュトークン）を受け取る。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            examples:
+              refresh例:
+                value:
+                  refresh_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: トークンを更新しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 1.3
+  /api/auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: ログアウト
+      description: >
+        リフレッシュトークンを失効させ、再利用できない状態にする。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+            examples:
+              logout例:
+                value:
+                  refresh_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '204':
+          description: ログアウトが完了しました。レスポンスボディは空です。
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 1.4
+  /api/me:
+    get:
+      tags:
+        - Account
+      summary: マイプロフィール取得
+      description: >
+        現在ログインしているユーザーのプロフィールを取得する。
+      security:
+        - jwtAuth: []
+      responses:
+        '200':
+          description: プロフィールを返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Account
+      summary: マイプロフィール更新
+      description: >
+        ニックネーム・居住エリア・子どもの年齢帯を部分更新する。
+      security:
+        - jwtAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+            examples:
+              更新例:
+                value:
+                  nickname: たろうのママ
+                  home_area: 東京都世田谷区
+                  child_age_band_id: 2c14f9aa-4c2e-4ff2-9df4-0bc8a5c6c510
+      responses:
+        '200':
+          description: 更新後のプロフィールを返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 2
+  /api/categories:
+    get:
+      tags:
+        - Master
+      summary: カテゴリ一覧
+      description: >
+        施設カテゴリを並び順付きで取得する。
+      security: []
+      responses:
+        '200':
+          description: カテゴリ一覧を返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
+              examples:
+                一覧例:
+                  value:
+                    items:
+                      - code: park
+                        label: 公園
+                        sort: 10
+                      - code: restaurant
+                        label: 飲食店
+                        sort: 30
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 2
+  /api/features:
+    get:
+      tags:
+        - Master
+      summary: 設備・サービス一覧
+      description: >
+        設備・サービスのマスタを取得する。
+      security: []
+      responses:
+        '200':
+          description: 設備・サービス一覧を返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureListResponse'
+              examples:
+                一覧例:
+                  value:
+                    items:
+                      - code: diaper_table
+                        label: おむつ交換台
+                        category: restroom
+                        description: おむつ交換台が利用できます
+                      - code: stroller_ok
+                        label: ベビーカーOK
+                        category: access
+                        description: ベビーカーで館内移動できます
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 2
+  /api/age-bands:
+    get:
+      tags:
+        - Master
+      summary: 年齢帯一覧
+      description: >
+        子どもの年齢帯マスタを取得する。
+      security: []
+      responses:
+        '200':
+          description: 年齢帯一覧を返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgeBandListResponse'
+              examples:
+                一覧例:
+                  value:
+                    items:
+                      - id: 72c1f812-36e3-4c8e-bf69-a7dfb6a753d1
+                        code: baby_0_1
+                        label: 0-1歳
+                        sort: 10
+                      - id: 39c44a2d-4ba5-485f-8f6e-7b6c7790f6d5
+                        code: toddler_2_3
+                        label: 2-3歳
+                        sort: 20
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 3.1
   /api/places:
     get:
-      operationId: places_retrieve
-      description: |-
-        施設検索。
-        必須: lat, lng
-        任意: radius_m(既定3000, 最大30000), limit(既定20, 最大50), cursor(base64), q, category, sort
-        並び替え(sort): distance | score | reviews | new
-        仕様: 半径内で PostGIS KNN を使いつつ、指定の sort に応じて ORDER BY を切り替え、`{ items, next_cursor }` を返す。
       tags:
-      - places
-      security:
-      - jwtAuth: []
-      - {}
+        - Places
+      summary: 施設検索
+      description: >
+        現在地やキーワードをもとに施設を検索し、距離順で返却する。カーソル付きページングに対応。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Latitude'
+        - $ref: '#/components/parameters/Longitude'
+        - $ref: '#/components/parameters/RadiusMeters'
+        - $ref: '#/components/parameters/PlaceLimit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/CategoryFilter'
+        - $ref: '#/components/parameters/PlaceSort'
+        - $ref: '#/components/parameters/FeaturesFilter'
       responses:
         '200':
-          description: No response body
+          description: 施設一覧を返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceListResponse'
+              examples:
+                検索例:
+                  value:
+                    items:
+                      - id: 7f0f5d98-4c6e-4da0-8aaf-2f86f0fb1d91
+                        name: 中央公園
+                        category:
+                          code: park
+                          label: 公園
+                        location:
+                          lat: 35.681236
+                          lng: 139.767125
+                          distance_m: 420
+                        features_summary:
+                          - diaper_table
+                          - stroller_ok
+                        rating:
+                          overall: 4.3
+                          count: 52
+                        thumbnail_url: null
+                        created_at: 2025-09-10T02:30:00Z
+                    next_cursor: eyJvZmZzZXQiOjIwfQ==
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 3.2
   /api/places/{place_id}:
     get:
-      operationId: places_retrieve_2
-      description: |-
-        施設詳細を返す。
-        入力: path param {id}
-        返却: API設計に準拠した施設詳細（features/rating/photos/sourceメタを含む）。
-        - 現状のDBにはレビュー/写真集計が無いため、rating と photos はプレースホルダ（overall=null, count=0, photos=[]）
-        - 取得元メタは places.google_place_id / data_source を返す
-      parameters:
-      - in: path
-        name: place_id
-        schema:
-          type: string
-          format: uuid
-        required: true
       tags:
-      - places
-      security:
-      - jwtAuth: []
-      - {}
+        - Places
+      summary: 施設詳細取得
+      description: >
+        指定した施設の詳細情報を返却する。設備一覧・レビュー集計・写真情報を含む。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PlaceIdPath'
       responses:
         '200':
-          description: No response body
+          description: 施設詳細を返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceDetail'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 6
   /api/places/{place_id}/reviews:
     get:
-      operationId: places_reviews_retrieve
-      parameters:
-      - in: path
-        name: place_id
-        schema:
-          type: string
-          format: uuid
-        required: true
       tags:
-      - places
-      security:
-      - jwtAuth: []
-      - {}
+        - Reviews
+      summary: 施設レビュー一覧
+      description: >
+        指定した施設のレビューを新着順または評価順で取得する。カーソル方式のページングを提供する。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PlaceIdPath'
+        - $ref: '#/components/parameters/ReviewLimit'
+        - $ref: '#/components/parameters/ReviewCursor'
+        - $ref: '#/components/parameters/ReviewSort'
+        - $ref: '#/components/parameters/ReviewHasPhoto'
       responses:
         '200':
-          description: No response body
+          description: レビュー一覧を返却しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 6.6
   /api/reviews:
     post:
-      operationId: reviews_create
       tags:
-      - reviews
+        - Reviews
+      summary: レビュー投稿
+      description: >
+        施設に対するレビューを投稿し、評価軸スコアや写真を紐付ける。
       security:
-      - jwtAuth: []
+        - jwtAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewCreateRequest'
+            examples:
+              投稿例:
+                value:
+                  place_id: 7f0f5d98-4c6e-4da0-8aaf-2f86f0fb1d91
+                  overall: 5
+                  age_band_id: 39c44a2d-4ba5-485f-8f6e-7b6c7790f6d5
+                  stay_minutes: 90
+                  revisit_intent: 5
+                  text: 週末でも混雑が少なく、授乳室も清潔でした。
+                  axes:
+                    - code: cleanliness
+                      score: 5
+                    - code: safety
+                      score: 4
+                  photo_ids:
+                    - 2d5f14dc-4b4f-4a35-9f44-1f3e1f0ad955
       responses:
-        '200':
-          description: No response body
+        '201':
+          description: レビューを登録しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewCreateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  # 参照: API設計.md 8
   /api/uploads:
     post:
-      operationId: uploads_create
       tags:
-      - uploads
+        - Uploads
+      summary: 画像アップロード
+      description: >
+        レビューや施設写真をアップロードし、公開用URLを取得する。画像は最大5MB、長辺1600pxまで自動調整される。
       security:
-      - jwtAuth: []
+        - jwtAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+            examples:
+              フォーム例:
+                summary: review_photo をアップロードする例
+                value:
+                  purpose: review_photo
+                  place_id: 7f0f5d98-4c6e-4da0-8aaf-2f86f0fb1d91
+                  file: '@photo.jpg'
       responses:
-        '200':
-          description: No response body
+        '201':
+          description: 画像を保存しました。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 components:
+  # 共通定義: API設計.md 0章（共通仕様）
   securitySchemes:
     jwtAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-servers:
-- url: http://localhost:8000
-  description: Local dev
+  parameters:
+    Latitude:
+      name: lat
+      in: query
+      required: true
+      schema:
+        type: number
+        format: double
+        minimum: -90
+        maximum: 90
+      description: 検索基点となる緯度。
+    Longitude:
+      name: lng
+      in: query
+      required: true
+      schema:
+        type: number
+        format: double
+        minimum: -180
+        maximum: 180
+      description: 検索基点となる経度。
+    RadiusMeters:
+      name: radius_m
+      in: query
+      required: false
+      schema:
+        type: number
+        format: double
+        default: 3000
+        minimum: 1
+        maximum: 30000
+      description: 検索半径（メートル）。既定3000、最大30000。
+    PlaceLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        default: 20
+        minimum: 1
+        maximum: 50
+      description: 取得件数。既定20、最大50。
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        description: ベース64エンコードされたカーソル。次ページ取得に使用。
+      description: 前回レスポンスの next_cursor を指定すると続きから取得できる。
+    SearchQuery:
+      name: q
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 200
+      description: 名称・説明・住所の全文検索キーワード。
+    CategoryFilter:
+      name: category
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 100
+      description: 施設カテゴリコードでの絞り込み。
+    PlaceSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - distance
+          - score
+          - reviews
+          - new
+        default: distance
+      description: 並び順を指定。distance=距離順、score=総合スコア順、reviews=レビュー件数順、new=新着順。
+    FeaturesFilter:
+      name: features
+      in: query
+      required: false
+      schema:
+        type: array
+        items:
+          type: string
+        minItems: 1
+      style: form
+      explode: true
+      description: 設備・サービスコードを複数指定してAND条件で絞り込む。
+    PlaceIdPath:
+      name: place_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: 対象施設のUUID。
+    ReviewLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        format: int32
+        default: 5
+        minimum: 1
+        maximum: 20
+      description: 取得件数。既定5、最大20。
+    ReviewCursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: レビュー一覧のカーソル。前回レスポンスの next_cursor を指定する。
+    ReviewSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - new
+          - rating
+        default: new
+      description: new=新着順、rating=総合評価の高い順。
+    ReviewHasPhoto:
+      name: has_photo
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - "1"
+          - "true"
+          - "True"
+          - "yes"
+      description: 写真付きレビューのみに絞る場合は真偽値相当の文字列を指定。
+  # 共通レスポンス定義: API設計.md 0.3 エラー形式
+  responses:
+    ValidationError:
+      description: 入力値が不正です。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: 認証が必要です。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: アクセス権限がありません。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: 対象が存在しません。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: リソースの競合が発生しました。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: レート制限を超過しました。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: サーバー内部エラーが発生しました。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  # スキーマ定義: API設計.md・DB設計.md 各項目
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - trace_id
+          properties:
+            code:
+              type: string
+              description: エラー分類コード。
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: 人が読めるメッセージ。
+              example: 入力内容に誤りがあります
+            details:
+              description: フィールド単位の詳細や補足情報。
+              oneOf:
+                - type: object
+                - type: array
+              nullable: true
+            trace_id:
+              type: string
+              description: 問い合わせ用の追跡ID。
+              example: req_ab12cd34ef56
+    PingResponse:
+      type: object
+      properties:
+        pong:
+          type: boolean
+          example: true
+      required:
+        - pong
+    SignupRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: ログイン用メールアドレス。
+        password:
+          type: string
+          format: password
+          description: パスワード。Djangoのパスワード検証を通過する必要がある。
+          minLength: 8
+        nickname:
+          type: string
+          description: 表示名。未指定時はメールアドレスのローカル部が使用される。
+          nullable: true
+        home_area:
+          type: string
+          description: 居住エリア。任意項目。
+          nullable: true
+        child_age_band_id:
+          type: string
+          format: uuid
+          description: 子どもの年齢帯ID。任意。
+          nullable: true
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: ログイン用メールアドレス。
+        password:
+          type: string
+          format: password
+          description: パスワード。
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: 取得済みのリフレッシュトークン。
+    RefreshResponse:
+      type: object
+      required:
+        - access_token
+      properties:
+        access_token:
+          type: string
+          description: 新しいアクセストークン。
+        refresh_token:
+          type: string
+          description: 更新後のリフレッシュトークン。設定により返却されない場合がある。
+          nullable: true
+    LogoutRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: 失効させるリフレッシュトークン。
+    ChildAgeBandSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 年齢帯ID。
+        code:
+          type: string
+          description: 年齢帯コード。
+        label:
+          type: string
+          description: 表示名。
+        sort:
+          type: integer
+          description: 並び順。
+      required:
+        - id
+        - code
+        - label
+        - sort
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ユーザーID。
+        email:
+          type: string
+          format: email
+          description: メールアドレス。
+        role:
+          type: string
+          description: 権限ロール。admin または member。
+          example: member
+        nickname:
+          type: string
+          description: ニックネーム。
+          nullable: true
+        home_area:
+          type: string
+          description: 居住エリア。
+          nullable: true
+        child_age_band:
+          $ref: '#/components/schemas/ChildAgeBandSummary'
+      required:
+        - id
+        - email
+        - role
+    AuthTokenResponse:
+      type: object
+      required:
+        - user
+        - access_token
+        - refresh_token
+      properties:
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        access_token:
+          type: string
+          description: アクセスに使用するJWT。
+        refresh_token:
+          type: string
+          description: アクセストークン更新用のJWT。
+    MeResponse:
+      type: object
+      required:
+        - user
+      properties:
+        user:
+          $ref: '#/components/schemas/UserSummary'
+    ProfileUpdateRequest:
+      type: object
+      description: 変更したい項目のみを含める。
+      properties:
+        nickname:
+          type: string
+          description: 新しいニックネーム。
+          nullable: true
+        home_area:
+          type: string
+          description: 新しい居住エリア。
+          nullable: true
+        child_age_band_id:
+          type: string
+          format: uuid
+          description: 子どもの年齢帯ID。
+          nullable: true
+    Category:
+      type: object
+      required:
+        - code
+        - label
+        - sort
+      properties:
+        code:
+          type: string
+          description: カテゴリコード。
+        label:
+          type: string
+          description: 表示名。
+        sort:
+          type: integer
+          description: 並び順。
+    CategoryListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+    Feature:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          description: 設備・サービスコード。
+        label:
+          type: string
+          description: 表示名。
+        category:
+          type: string
+          description: カテゴリ（restroom/access/food 等）。
+          nullable: true
+        description:
+          type: string
+          description: 補足説明。
+          nullable: true
+    FeatureListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Feature'
+    AgeBand:
+      type: object
+      required:
+        - id
+        - code
+        - label
+        - sort
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 年齢帯ID。
+        code:
+          type: string
+          description: 年齢帯コード。
+        label:
+          type: string
+          description: 表示名。
+        sort:
+          type: integer
+          description: 並び順。
+    AgeBandListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgeBand'
+    PlaceCategorySummary:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          description: カテゴリコード。
+        label:
+          type: string
+          description: 表示名。
+    PlaceLocation:
+      type: object
+      required:
+        - lat
+        - lng
+      properties:
+        lat:
+          type: number
+          format: double
+          description: 緯度。
+        lng:
+          type: number
+          format: double
+          description: 経度。
+        distance_m:
+          type: number
+          format: double
+          description: 検索基点からの距離（メートル）。
+          nullable: true
+    RatingSummary:
+      type: object
+      required:
+        - count
+      properties:
+        overall:
+          type: number
+          format: float
+          description: 平均スコア。
+          nullable: true
+          example: 4.3
+        count:
+          type: integer
+          description: レビュー件数。
+          example: 52
+    PlaceSummary:
+      type: object
+      required:
+        - id
+        - name
+        - category
+        - location
+        - features_summary
+        - rating
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 施設ID。
+        name:
+          type: string
+          description: 施設名称。
+        category:
+          $ref: '#/components/schemas/PlaceCategorySummary'
+        location:
+          $ref: '#/components/schemas/PlaceLocation'
+        features_summary:
+          type: array
+          description: 設備・サービスコードの一覧。表示用の簡易要約。
+          items:
+            type: string
+        rating:
+          $ref: '#/components/schemas/RatingSummary'
+        thumbnail_url:
+          type: string
+          format: uri
+          description: サムネイル画像URL。
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          description: 施設の作成日時。
+    PlaceListResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceSummary'
+        next_cursor:
+          type: string
+          description: 次ページ取得用カーソル。次がない場合は null。
+          nullable: true
+    PlaceFeatureDetail:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          description: 設備・サービスコード。
+        label:
+          type: string
+          description: 表示名。
+        value:
+          type: integer
+          description: 数量や有無を表す値（1=あり）。null の場合は未設定。
+          nullable: true
+        detail:
+          type: string
+          description: 補足説明。
+          nullable: true
+    RatingBreakdown:
+      type: object
+      required:
+        - count
+        - axes
+      properties:
+        overall:
+          type: number
+          format: float
+          description: 平均スコア。
+          nullable: true
+        count:
+          type: integer
+          description: 公開レビュー件数。
+        axes:
+          type: object
+          description: 評価軸ごとの平均スコア。キーは日本語ラベル。
+          additionalProperties:
+            type: number
+            format: float
+    PlacePhoto:
+      type: object
+      required:
+        - id
+        - url
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 写真ID。
+        url:
+          type: string
+          format: uri
+          description: 公開URL。
+        width:
+          type: integer
+          description: 画像幅(px)。
+          nullable: true
+        height:
+          type: integer
+          description: 画像高さ(px)。
+          nullable: true
+        mime_type:
+          type: string
+          description: MIMEタイプ。
+          nullable: true
+    PlaceGoogleMeta:
+      type: object
+      required:
+        - place_id
+        - source
+      properties:
+        place_id:
+          type: string
+          description: Google Place ID。
+        source:
+          type: string
+          description: データ取得元。例: google。
+        synced_at:
+          type: string
+          format: date-time
+          description: 最終同期日時。
+          nullable: true
+    PlaceDetail:
+      type: object
+      required:
+        - id
+        - name
+        - category
+        - location
+        - features
+        - rating
+        - photos
+        - data_source
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 施設ID。
+        name:
+          type: string
+          description: 施設名称。
+        category:
+          $ref: '#/components/schemas/PlaceCategorySummary'
+        description:
+          type: string
+          description: 施設の説明文。
+          nullable: true
+        address:
+          type: string
+          description: 住所。
+          nullable: true
+        phone:
+          type: string
+          description: 電話番号。
+          nullable: true
+        website_url:
+          type: string
+          format: uri
+          description: 公式サイトURL。
+          nullable: true
+        opening_hours:
+          type: object
+          description: 曜日ごとの営業時間。GoogleプレイスAPI互換フォーマット。
+          additionalProperties:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+          nullable: true
+        location:
+          $ref: '#/components/schemas/PlaceLocation'
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceFeatureDetail'
+        rating:
+          $ref: '#/components/schemas/RatingBreakdown'
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlacePhoto'
+        google:
+          $ref: '#/components/schemas/PlaceGoogleMeta'
+          nullable: true
+        data_source:
+          type: string
+          description: データ取得元。google または manual など。
+        created_at:
+          type: string
+          format: date-time
+          description: 作成日時。
+        updated_at:
+          type: string
+          format: date-time
+          description: 更新日時。
+    ReviewAxisScoreInput:
+      type: object
+      required:
+        - code
+        - score
+      properties:
+        code:
+          type: string
+          description: 評価軸コード。
+          example: cleanliness
+        score:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 5
+          description: 評価スコア（1〜5）。
+    ReviewCreateRequest:
+      type: object
+      required:
+        - place_id
+        - overall
+        - text
+        - axes
+      properties:
+        place_id:
+          type: string
+          format: uuid
+          description: レビュー対象の施設ID。
+        overall:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: 総合評価。
+        age_band_id:
+          type: string
+          format: uuid
+          description: 投稿者が利用した際の子どもの年齢帯ID。
+          nullable: true
+        stay_minutes:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: 滞在時間（分）。
+          nullable: true
+        revisit_intent:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: 再訪意向スコア。
+          nullable: true
+        text:
+          type: string
+          description: レビュー本文（最大2000文字）。
+        axes:
+          type: array
+          description: 評価軸ごとのスコア。
+          items:
+            $ref: '#/components/schemas/ReviewAxisScoreInput'
+          minItems: 1
+        photo_ids:
+          type: array
+          description: 紐付けるアップロード済み写真のID。
+          items:
+            type: string
+            format: uuid
+          nullable: true
+    ReviewCreateResponse:
+      type: object
+      required:
+        - review_id
+      properties:
+        review_id:
+          type: string
+          format: uuid
+          description: 登録されたレビューID。
+    ReviewUserSummary:
+      type: object
+      required:
+        - id
+        - nickname
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 投稿者のユーザーID。
+        nickname:
+          type: string
+          description: 表示名。
+        child_age_band:
+          type: string
+          description: 投稿者が登録している子どもの年齢帯ラベル。
+          nullable: true
+    ReviewPhoto:
+      type: object
+      required:
+        - id
+        - url
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 写真ID。
+        url:
+          type: string
+          format: uri
+          description: 公開URL。
+        width:
+          type: integer
+          description: 画像幅(px)。
+          nullable: true
+        height:
+          type: integer
+          description: 画像高さ(px)。
+          nullable: true
+        mime_type:
+          type: string
+          description: MIMEタイプ。
+          nullable: true
+    ReviewItem:
+      type: object
+      required:
+        - id
+        - overall
+        - text
+        - created_at
+        - user
+        - axes
+        - photos
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: レビューID。
+        overall:
+          type: integer
+          description: 総合評価（1〜5）。
+        text:
+          type: string
+          description: レビュー本文。
+        stay_minutes:
+          type: integer
+          description: 滞在時間（分）。
+          nullable: true
+        revisit_intent:
+          type: integer
+          description: 再訪意向スコア。
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          description: 投稿日時。
+        user:
+          $ref: '#/components/schemas/ReviewUserSummary'
+        age_band:
+          type: string
+          description: レビュー投稿時に選択された年齢帯ラベル。
+          nullable: true
+        axes:
+          type: object
+          description: 評価軸ラベルとスコアの対応。
+          additionalProperties:
+            type: integer
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewPhoto'
+    ReviewListResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewItem'
+        next_cursor:
+          type: string
+          description: 次ページ取得用カーソル。
+          nullable: true
+    UploadRequest:
+      type: object
+      required:
+        - purpose
+        - file
+      properties:
+        purpose:
+          type: string
+          description: アップロード目的。
+          enum:
+            - review_photo
+            - place_photo
+        file:
+          type: string
+          format: binary
+          description: 画像ファイル (jpg/png/webp)。
+        place_id:
+          type: string
+          format: uuid
+          description: 紐付ける施設ID。review_photo の場合は必須。
+          nullable: true
+    UploadPhotoSummary:
+      type: object
+      required:
+        - id
+        - storage_path
+        - public_url
+        - width
+        - height
+        - mime_type
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 写真ID。
+        storage_path:
+          type: string
+          description: サーバー内部での保存パス。
+        public_url:
+          type: string
+          format: uri
+          description: クライアントが利用する公開URL。
+        width:
+          type: integer
+          description: 画像幅(px)。
+        height:
+          type: integer
+          description: 画像高さ(px)。
+        mime_type:
+          type: string
+          description: MIMEタイプ。
+    UploadResponse:
+      type: object
+      required:
+        - photo
+      properties:
+        photo:
+          $ref: '#/components/schemas/UploadPhotoSummary'
